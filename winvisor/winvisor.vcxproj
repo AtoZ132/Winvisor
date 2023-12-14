@@ -112,9 +112,11 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Driver.c" />
+    <ClCompile Include="vmx.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Driver.h" />
+    <ClInclude Include="vmx.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

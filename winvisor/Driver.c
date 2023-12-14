@@ -13,14 +13,14 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
     ntStatus = IoCreateSymbolicLink(&dosDeviceName, &deviceName);
     if (!NT_SUCCESS(ntStatus)) 
     {
-        DbgPrint("[-] Could not create symbolic link");
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, ("[-] Could not create symbolic link\n"));
         return ntStatus;
     }
 
     ntStatus = IoCreateDevice(DriverObject, 0, &deviceName, FILE_DEVICE_UNKNOWN, FILE_DEVICE_SECURE_OPEN, FALSE, &deviceObject);
     if (!NT_SUCCESS(ntStatus))
     {
-        DbgPrint("[-] Could not create device object");
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, ("[-] Could not create device object\n"));
         return ntStatus;
     }
 
@@ -31,9 +31,15 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 
     DriverObject->DriverUnload = DriverUnload;
 
+    // Check for vmx support
+    ntStatus = CheckVmxSupport();
+    if (!NT_SUCCESS(ntStatus))
+    {
+        return ntStatus;
+    }
 
 
-    DbgPrint("[*] Driver Loaded!");
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, ("[*] Driver Loaded!\n"));
 
     return ntStatus;
 }
@@ -48,7 +54,7 @@ VOID DriverUnload(PDRIVER_OBJECT DriverObject)
     IoDeleteSymbolicLink(&dosDeviceName);
     IoDeleteDevice(DriverObject->DeviceObject);
 
-    DbgPrint("[*] Driver Unloaded!");
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, ("[*] Driver Unloaded!\n"));
 }
 
 NTSTATUS DriverUnsupported(PDEVICE_OBJECT DeviceObject, PIRP Irp) 
@@ -57,7 +63,8 @@ NTSTATUS DriverUnsupported(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     Irp->IoStatus.Status = STATUS_SUCCESS;
     Irp->IoStatus.Information = 0;
 
-    DbgPrint("[-] Unsupported Call: %d", Irp->Type);
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, ("[-] Unsupported Call: %d\n", Irp->Type));
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
     return STATUS_SUCCESS;
 }
