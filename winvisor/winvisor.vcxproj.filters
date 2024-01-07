@@ -19,7 +19,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <Inf Include="winvisor.inf">
+    <Inf Include="Winvisor.inf">
       <Filter>Driver Files</Filter>
     </Inf>
   </ItemGroup>
@@ -27,9 +27,18 @@
     <ClCompile Include="Driver.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Vmx.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Driver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Vmx.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Arch.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
