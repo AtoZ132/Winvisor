@@ -51,19 +51,26 @@ NTSTATUS CheckVmxSupport()
 	return STATUS_SUCCESS;
 }
 
-BOOLEAN VmxonOperation()
+/*
+* vmxon operation is a per preocessor method and affects only the "current" processor
+*/
+BOOLEAN VmxonOp(UINT64 vmxonRegionPhysical)
 {
-	UINT64 vmcsRegionPhysical = InitVmxonRegion();
-	if (vmcsRegionPhysical == NULL) 
-	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, ("[-] Failed to init vmcs region\n")));
-		return FALSE;
-	}
-
-	int status = __vmx_on(vmcsRegionPhysical);
+	int status = __vmx_on(vmxonRegionPhysical);
 	if (status)
 	{
 		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, ("[-] vmxon failed with status: %d\n", status)));
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+BOOLEAN VmptrldOp(UINT64 vmcsPhysical) {
+	int status = __vmx_vmptrld(vmcsPhysical);
+	if (status)
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, ("[-] vmptrld failed with status: %d\n", status)));
 		return FALSE;
 	}
 
@@ -74,7 +81,7 @@ BOOLEAN VmxonOperation()
 *  On success, returns a pointer to the physical address of the vmcs region.
 *  On error, returns null
 */
-UINT64 InitVmxonRegion()
+UINT64 InitVmcsRegion()
 {
 	PVMCS_REGION pVmcsRegion = NULL;
 	PHYSICAL_ADDRESS maxPhysicalAddress = { 0 };
@@ -94,11 +101,19 @@ UINT64 InitVmxonRegion()
 	return MmGetPhysicalAddress(pVmcsRegion).QuadPart;
 }
 
-VOID DeallocVmxonRegion(UINT64 vmcsRegionPhysical) 
+VOID DeallocVmcsRegion(UINT64 vmcsRegionPhysical) 
 {
 	PHYSICAL_ADDRESS physicalAddr = { 0 };
 	physicalAddr.QuadPart = vmcsRegionPhysical;
 	PVOID vmcsRegionVirtual = MmGetVirtualForPhysical(physicalAddr);
 
 	MmFreeContiguousMemory(vmcsRegionVirtual);
+}
+
+/*
+* vmxoff operation is a per preocessor method and affects only the "current" processor
+*/
+VOID VmxoffOp()
+{
+	__vmx_off();
 }

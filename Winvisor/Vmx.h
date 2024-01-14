@@ -17,6 +17,8 @@ typedef struct _VMCS_REGION
 } VMCS_REGION, *PVMCS_REGION;
 
 NTSTATUS CheckVmxSupport();
-BOOLEAN VmxonOperation();
-UINT64 InitVmxonRegion();
-VOID DeallocVmxonRegion(UINT64 vmcsRegionPhysical);
+BOOLEAN VmxonOp(UINT64 vmxonRegionPhysical);
+BOOLEAN VmptrldOp(UINT64 vmcsPhysical);
+VOID VmxoffOp();
+UINT64 InitVmcsRegion();
+VOID DeallocVmcsRegion(UINT64 vmcsRegionPhysical);
