@@ -1,5 +1,8 @@
 #include "Vmx.h"
 
+// Globals
+PSYSTEM_DATA gSystemData; // Currently one structure to rule them all (cores)
+
 NTSTATUS CheckVmxSupport() 
 {
 	char vendorId[13];
@@ -56,6 +59,11 @@ NTSTATUS CheckVmxSupport()
 */
 BOOLEAN VmxonOp(UINT64 vmxonRegionPhysical)
 {
+	// Set cr4.vmxe bit
+	ULONGLONG cr4 = __readcr4();
+	cr4 |= (1ULL << 13);
+	__writecr4(cr4);
+
 	int status = __vmx_on(vmxonRegionPhysical);
 	if (status)
 	{
@@ -78,7 +86,7 @@ BOOLEAN VmptrldOp(UINT64 vmcsPhysical) {
 }
 
 /*
-*  On success, returns a pointer to the physical address of the vmcs region.
+*  On success, returns a pointer to the virtual address of the vmcs region.
 *  On error, returns null
 */
 UINT64 InitVmcsRegion()
@@ -95,25 +103,55 @@ UINT64 InitVmcsRegion()
 		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, ("[-] Failed to allocate vmcs region\n")));
 		return NULL;
 	}
-	RtlZeroMemory(pVmcsRegion,sizeof(VMCS_REGION));
+	RtlZeroMemory(pVmcsRegion, sizeof(VMCS_REGION));
 	pVmcsRegion->vmcsRevisionId = (UINT32)vmxBasicMsr.Bitfield.revisionId;
 
-	return MmGetPhysicalAddress(pVmcsRegion).QuadPart;
+	return pVmcsRegion;
 }
 
-VOID DeallocVmcsRegion(UINT64 vmcsRegionPhysical) 
+VOID DeallocVmcsRegion(UINT64 vmcsRegion) 
 {
-	PHYSICAL_ADDRESS physicalAddr = { 0 };
-	physicalAddr.QuadPart = vmcsRegionPhysical;
-	PVOID vmcsRegionVirtual = MmGetVirtualForPhysical(physicalAddr);
-
-	MmFreeContiguousMemory(vmcsRegionVirtual);
+	MmFreeContiguousMemory(vmcsRegion);
 }
 
 /*
 * vmxoff operation is a per preocessor method and affects only the "current" processor
 */
-VOID VmxoffOp()
-{
+VOID VmxoffOp() {
+	// Clear cr4.vmxe bit
+	ULONGLONG cr4 = __readcr4();
+	cr4 &= ~(1ULL << 13);
+	__writecr4(cr4);
+
 	__vmx_off();
+}
+
+BOOLEAN AllocSystemData() 
+{
+	gSystemData->vmxonRegion = InitVmcsRegion();
+	if (!gSystemData->vmxonRegion)
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, ("[-] vmxon region init failed\n")));
+		return FALSE;
+	}
+
+	gSystemData->vmcsRegion = InitVmcsRegion();
+	if (!gSystemData->vmcsRegion)
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, ("[-] vmcs region init failed\n")));
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+VOID DeallocSystemData()
+{
+	DeallocVmcsRegion(gSystemData->vmxonRegion);
+	DeallocVmcsRegion(gSystemData->vmcsRegion);
+}
+
+PSYSTEM_DATA GetSystemData()
+{
+	return gSystemData;
 }

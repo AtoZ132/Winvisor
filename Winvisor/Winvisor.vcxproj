@@ -115,11 +115,13 @@
   <ItemGroup>
     <ClCompile Include="Driver.c" />
     <ClCompile Include="Vmx.c" />
+    <ClCompile Include="WinvisorUtil.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Arch.h" />
     <ClInclude Include="Driver.h" />
     <ClInclude Include="Vmx.h" />
+    <ClInclude Include="WinvisorUtil.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -71,16 +71,15 @@ NTSTATUS DriverUnsupported(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
 NTSTATUS DriverCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
-    // run vmxon here
     
+    
+    // loop on n cores to set them in vm mode
 
 
 
-
+    KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, ("[*] Vmx mode turn on!\n")));
     Irp->IoStatus.Status = STATUS_SUCCESS;
     Irp->IoStatus.Information = 0;
-
-    
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
     return STATUS_SUCCESS;
@@ -88,10 +87,10 @@ NTSTATUS DriverCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
 NTSTATUS DriverClose(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
-    // run vmxoff here
+    
 
 
-
+    KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, ("[*] Vmx mode turn off!\n")));
     Irp->IoStatus.Status = STATUS_SUCCESS;
     Irp->IoStatus.Information = 0;
 

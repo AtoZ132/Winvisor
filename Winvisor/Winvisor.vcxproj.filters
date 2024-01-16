@@ -30,6 +30,9 @@
     <ClCompile Include="Vmx.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="WinvisorUtil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Driver.h">
@@ -39,6 +42,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Arch.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="WinvisorUtil.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
