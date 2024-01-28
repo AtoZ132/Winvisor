@@ -4,6 +4,8 @@
 #include "Arch.h"
 #include "WinvisorUtil.h"
 
+// Set the define for unicore mode
+#define UNICORE 0
 
 /*
 * vmcs_revision_id - 
@@ -27,11 +29,12 @@ typedef struct _SYSTEM_DATA
 } SYSTEM_DATA, *PSYSTEM_DATA;
 
 NTSTATUS CheckVmxSupport();
-BOOLEAN VmxonOp(UINT64 vmxonRegionPhysical);
-BOOLEAN VmptrldOp(UINT64 vmcsPhysical);
+BOOLEAN VmxonOp(UINT64* vmxonRegionPhysical);
+BOOLEAN VmptrldOp(UINT64* vmcsPhysical);
 VOID VmxoffOp();
-UINT64 InitVmcsRegion();
-VOID DeallocVmcsRegion(UINT64 vmcsRegionPhysical);
-BOOLEAN AllocSystemData();
-VOID DeallocSystemData();
-PSYSTEM_DATA GetSystemData();
+UINT64* InitVmcsRegion();
+VOID DeallocVmcsRegion(UINT64* vmcsRegionPhysical);
+BOOLEAN AllocSystemData(PSYSTEM_DATA systemData);
+VOID DeallocSystemData(PSYSTEM_DATA systemData);
+BOOLEAN WvsrRunVm();
+VOID WvsrStopVm();

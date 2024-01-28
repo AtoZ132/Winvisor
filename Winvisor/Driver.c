@@ -1,5 +1,6 @@
 #include "Driver.h"
 
+
 NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath) 
 {
     NTSTATUS        ntStatus;
@@ -13,14 +14,14 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
     ntStatus = IoCreateSymbolicLink(&dosDeviceName, &deviceName);
     if (!NT_SUCCESS(ntStatus)) 
     {
-        KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, ("[-] Could not create symbolic link\n")));
+        KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] Could not create symbolic link\n"));
         return ntStatus;
     }
 
     ntStatus = IoCreateDevice(DriverObject, 0, &deviceName, FILE_DEVICE_UNKNOWN, FILE_DEVICE_SECURE_OPEN, FALSE, &deviceObject);
     if (!NT_SUCCESS(ntStatus))
     {
-        KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, ("[-] Could not create device object\n")));
+        KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] Could not create device object\n"));
         return ntStatus;
     }
 
@@ -40,22 +41,24 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
         return ntStatus;
     }
 
-
-    KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, ("[*] Driver Loaded!\n")));
+    WvsrRunVm();
+    KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] Vmx mode turn on!\n"));
+    KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] Driver Loaded!\n"));
 
     return ntStatus;
 }
 
 VOID DriverUnload(PDRIVER_OBJECT DriverObject) 
 {
-
     UNICODE_STRING dosDeviceName;
 
     RtlInitUnicodeString(&dosDeviceName, L"\\DosDevices\\WinvisorDevice");
     IoDeleteSymbolicLink(&dosDeviceName);
     IoDeleteDevice(DriverObject->DeviceObject);
 
-    KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, ("[*] Driver Unloaded!\n")));
+    WvsrStopVm();
+    KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] Vmx mode turn off!\n"));
+    KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] Driver Unloaded!\n"));
 }
 
 NTSTATUS DriverUnsupported(PDEVICE_OBJECT DeviceObject, PIRP Irp) 
@@ -63,7 +66,7 @@ NTSTATUS DriverUnsupported(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     Irp->IoStatus.Status = STATUS_SUCCESS;
     Irp->IoStatus.Information = 0;
 
-    KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, ("[-] Unsupported Call: %d\n", Irp->Type)));
+    KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] Unsupported Call: %d\n", Irp->Type));
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
     return STATUS_SUCCESS;
@@ -71,13 +74,7 @@ NTSTATUS DriverUnsupported(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
 NTSTATUS DriverCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
-    
-    
-    // loop on n cores to set them in vm mode
 
-
-
-    KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, ("[*] Vmx mode turn on!\n")));
     Irp->IoStatus.Status = STATUS_SUCCESS;
     Irp->IoStatus.Information = 0;
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
@@ -87,14 +84,10 @@ NTSTATUS DriverCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
 NTSTATUS DriverClose(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
-    
 
-
-    KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, ("[*] Vmx mode turn off!\n")));
     Irp->IoStatus.Status = STATUS_SUCCESS;
     Irp->IoStatus.Information = 0;
 
-    
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
     return STATUS_SUCCESS;
