@@ -26,5 +26,5 @@ typedef union _IA32_VMX_BASIC
 		UINT32 vmentryHWfaultWithErrCode: 1;
 		UINT32 reserved3 : 7;
 	} Bitfield;
-	ULONGLONG rawMsr;
+	UINT64 flags;
 } IA32_VMX_BASIC_MSR, *PIA32_VMX_BASIC_MSR;

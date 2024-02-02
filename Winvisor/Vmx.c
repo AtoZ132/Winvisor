@@ -81,7 +81,7 @@ BOOLEAN VmptrldOp(UINT64* vmcsPhysical) {
 		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmptrld failed with status: %d\n", status));
 		return FALSE;
 	}
-
+	
 	return TRUE;
 }
 
@@ -94,7 +94,7 @@ UINT64* InitVmcsRegion()
 	PVMCS_REGION pVmcsRegion = NULL;
 	PHYSICAL_ADDRESS maxPhysicalAddress = { 0 };
 	IA32_VMX_BASIC_MSR vmxBasicMsr = { 0 };
-	vmxBasicMsr.rawMsr = __readmsr(IA32_VMX_BASIC);
+	vmxBasicMsr.flags = __readmsr(IA32_VMX_BASIC);
 	maxPhysicalAddress.QuadPart = MAXULONG64;
 
 	pVmcsRegion = (PVMCS_REGION)MmAllocateContiguousMemory(sizeof(VMCS_REGION), maxPhysicalAddress);
