@@ -114,12 +114,14 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Driver.c" />
+    <ClCompile Include="Ept.c" />
     <ClCompile Include="Vmx.c" />
     <ClCompile Include="WinvisorUtil.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Arch.h" />
     <ClInclude Include="Driver.h" />
+    <ClInclude Include="Ept.h" />
     <ClInclude Include="Vmx.h" />
     <ClInclude Include="WinvisorUtil.h" />
   </ItemGroup>
