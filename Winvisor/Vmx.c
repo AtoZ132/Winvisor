@@ -74,7 +74,8 @@ BOOLEAN VmxonOp(UINT64* vmxonRegionPhysical)
 	return TRUE;
 }
 
-BOOLEAN VmptrldOp(UINT64* vmcsPhysical) {
+BOOLEAN VmptrldOp(UINT64* vmcsPhysical) 
+{
 	int status = __vmx_vmptrld(&vmcsPhysical);
 	if (status)
 	{
@@ -119,7 +120,8 @@ VOID DeallocVmcsRegion(UINT64* vmcsRegion)
 /*
 * vmxoff operation is a per preocessor method and affects only the "current" processor
 */
-VOID VmxoffOp() {
+VOID VmxoffOp() 
+{
 	__vmx_off();
 
 	// Clear cr4.vmxe bit
@@ -162,7 +164,11 @@ BOOLEAN WvsrRunVm()
 #else
 	int processorCount = 3;
 #endif
-	gSystemData = (PSYSTEM_DATA)ExAllocatePoolWithTag(NonPagedPool, processorCount * sizeof(SYSTEM_DATA), 'wvsr');
+	gSystemData = (PSYSTEM_DATA)ExAllocatePoolWithTag(NonPagedPool, processorCount * sizeof(SYSTEM_DATA), WVSR_TAG);
+	if (gSystemData == NULL)
+	{
+		return FALSE;
+	}
 	for (int i = 0; i < processorCount; i++)
 	{
 		KeSetSystemAffinityThread(1 << i); // Schedule the i-th logic processor
@@ -189,12 +195,7 @@ BOOLEAN WvsrRunVm()
 
 VOID WvsrStopVm()
 {
-#if UNICORE == 1
-	int processorCount = 1;
-#else
-	int processorCount = 3;
-#endif
-	for (int i = 0; i < processorCount; i++)
+	for (int i = 0; i < CPU_COUNT; i++)
 	{
 		KeSetSystemAffinityThread(1 << i); // Schedule the i-th logic processor
 		VmxoffOp();

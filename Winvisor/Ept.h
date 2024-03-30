@@ -1,5 +1,8 @@
 #pragma once
 #include <ntddk.h>
+#include "WinvisorUtil.h"
+
+#define TABLE_SIZE 512
 
 /*
 *  Implemented according to the Intel SDM ver. September 2023
@@ -168,4 +171,33 @@ typedef union _EPT_PTE
 	UINT64 flags;
 } EPT_PTE, *PEPT_PTE;
 
-BOOLEAN InitEpt();
+typedef struct _INVEPT_DESCRIPTOR 
+{
+	EPTP eptp;
+	UINT64 reserved;
+} INVEPT_DESC, *PINVEPT_DESC;
+
+// Enums
+
+// EPT cache types
+typedef enum CACHE_TYPE 
+{
+	UC = 0, // Uncachable
+	WC = 1, // Write Combine
+	WT = 4, // Write Through
+	WP = 5, // Write Protected
+	WB = 6  // Write back
+};
+
+// Invept types
+typedef enum INVEPT_TYPE 
+{
+	SINGLE_CONTEXT = 1,
+	GLOBAL_CONTEXT = 2
+};
+
+PEPTP InitEpt();
+VOID InveptOp(int inveptType, EPTP eptp);
+
+// extern
+extern void inline AsmInveptOp(int inveptType, PVOID inveptDesc);

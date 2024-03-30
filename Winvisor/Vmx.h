@@ -7,6 +7,13 @@
 // Set the define for unicore mode
 #define UNICORE 0
 
+#if UNICORE == 1
+#define CPU_COUNT 1
+#else
+#define CPU_COUNT 3
+#endif
+
+
 /*
 * vmcs_revision_id - 
 *	Bits 30:0: VMCS revision identifier
