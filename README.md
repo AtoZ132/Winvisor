@@ -1,5 +1,5 @@
  # Winvisor
-Winvisor is a simple hypervisor designed to run an app in an already running system with ept hooking features. Its (being) written in C as a Windows kernel driver(wdf) utualizing Intel VT-X.
+Winvisor is a simple hypervisor designed to run an app in an already running system with ept hooking features. Its (being) written in C as a Windows kernel driver utilizing Intel VT-X.
 It's still WIP
 
 # Goal 
