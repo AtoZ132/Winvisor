@@ -41,8 +41,26 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
         return ntStatus;
     }
 
-    WvsrRunVm();
+    // Initialize VM structures
+    ntStatus = WvsrInitVm();
+    if (!NT_SUCCESS(ntStatus))
+    {
+        return ntStatus;
+    }
+
     KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] Vmx mode turn on!\n"));
+
+    ntStatus = STATUS_SUCCESS;
+    for (int i = 0; i < CPU_COUNT; i++)
+    {
+        WvsrStartVm(i, &ntStatus);
+        if (!NT_SUCCESS(ntStatus))
+        {
+            DeallocSystemData(gSystemData);
+            return ntStatus;
+        }
+    }
+
     KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] Driver Loaded!\n"));
 
     return ntStatus;

@@ -189,15 +189,5 @@ typedef enum CACHE_TYPE
 	WB = 6  // Write back
 };
 
-// Invept types
-typedef enum INVEPT_TYPE 
-{
-	SINGLE_CONTEXT = 1,
-	GLOBAL_CONTEXT = 2
-};
 
 PEPTP InitEpt();
-VOID InveptOp(int inveptType, EPTP eptp);
-
-// extern
-extern void inline AsmInveptOp(int inveptType, PVOID inveptDesc);

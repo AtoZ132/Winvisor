@@ -3,6 +3,7 @@
 #include <intrin.h>
 #include "Arch.h"
 #include "WinvisorUtil.h"
+#include "Ept.h"
 
 // Set the define for unicore mode
 #define UNICORE 0
@@ -19,6 +20,7 @@
 *	Bits 30:0: VMCS revision identifier
 *	Bit 31: shadow-VMCS indicator
 */
+#pragma pack(1)
 typedef struct _VMCS_REGION
 {
 	UINT32 vmcsRevisionId;
@@ -33,6 +35,8 @@ typedef struct _SYSTEM_DATA
 {
 	PVMCS_REGION vmxonRegion;
 	PVMCS_REGION vmcsRegion;
+	PEPTP eptp;
+
 } SYSTEM_DATA, *PSYSTEM_DATA;
 
 typedef union _VMCS_COMP_ENCODING 
@@ -360,13 +364,28 @@ enum VmcsFields
 	HOST_IA32_INTERRUPT_SSP_TABLE_ADDR				= 0x00006c1c
 };
 
+// Invept types
+typedef enum INVEPT_TYPE
+{
+	SINGLE_CONTEXT = 1,
+	GLOBAL_CONTEXT = 2
+};
+
+
+// extern
+extern void inline AsmInveptOp(int inveptType, PVOID inveptDesc);
+
+
 NTSTATUS CheckVmxSupport();
 BOOLEAN VmxonOp(UINT64* vmxonRegionPhysical);
 BOOLEAN VmptrldOp(UINT64* vmcsPhysical);
+BOOLEAN VmclearOp(UINT64* vmcsPhysicalAddress);
 VOID VmxoffOp();
+VOID InveptOp(int inveptType, EPTP eptp);
 UINT64* InitVmcsRegion();
 VOID DeallocVmcsRegion(UINT64* vmcsRegionPhysical);
 BOOLEAN AllocSystemData(PSYSTEM_DATA systemData);
 VOID DeallocSystemData(PSYSTEM_DATA systemData);
-BOOLEAN WvsrRunVm();
+NTSTATUS WvsrInitVm();
+VOID WvsrStartVm(UINT32 processorId, NTSTATUS* ntStatus);
 VOID WvsrStopVm();

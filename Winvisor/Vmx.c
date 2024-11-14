@@ -74,9 +74,9 @@ BOOLEAN VmxonOp(UINT64* vmxonRegionPhysical)
 	return TRUE;
 }
 
-BOOLEAN VmptrldOp(UINT64* vmcsPhysical) 
+BOOLEAN VmptrldOp(UINT64* vmcsPhysicalAddress)
 {
-	int status = __vmx_vmptrld(&vmcsPhysical);
+	int status = __vmx_vmptrld(&vmcsPhysicalAddress);
 	if (status)
 	{
 		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmptrld failed with status: %d\n", status));
@@ -84,6 +84,54 @@ BOOLEAN VmptrldOp(UINT64* vmcsPhysical)
 	}
 	
 	return TRUE;
+}
+
+BOOLEAN VmclearOp(UINT64* vmcsPhysicalAddress)
+{
+	int status = __vmx_vmclear(&vmcsPhysicalAddress);
+	if (status)
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmclear failed with status: %d\n", status));
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+
+/*
+* vmxoff operation is a per preocessor method and affects only the "current" processor
+*/
+VOID VmxoffOp()
+{
+	__vmx_off();
+
+	// Clear cr4.vmxe bit
+	ULONGLONG cr4 = __readcr4();
+	cr4 &= ~(1ULL << 13);
+	__writecr4(cr4);
+}
+
+/*
+* To invalidate a single ept pass SINGLE_CONTEXT and the EPTP.
+* To invalidate all epts pass GLOBAL CONTEXT and NULL.
+*/
+VOID InveptOp(int inveptType, EPTP eptp)
+{
+	switch (inveptType)
+	{
+	case GLOBAL_CONTEXT:
+		AsmInveptOp(GLOBAL_CONTEXT, NULL);
+		break;
+	case SINGLE_CONTEXT:
+	{
+		INVEPT_DESC inveptDesc = { eptp, 0 };
+		AsmInveptOp(SINGLE_CONTEXT, &inveptDesc);
+		break;
+	}
+	default:
+		break;
+	}
 }
 
 /*
@@ -117,19 +165,6 @@ VOID DeallocVmcsRegion(UINT64* vmcsRegion)
 	MmFreeContiguousMemory(vmcsRegion);
 }
 
-/*
-* vmxoff operation is a per preocessor method and affects only the "current" processor
-*/
-VOID VmxoffOp() 
-{
-	__vmx_off();
-
-	// Clear cr4.vmxe bit
-	ULONGLONG cr4 = __readcr4();
-	cr4 &= ~(1ULL << 13);
-	__writecr4(cr4);
-}
-
 BOOLEAN AllocSystemData(PSYSTEM_DATA systemData) 
 {
 	systemData->vmxonRegion = InitVmcsRegion();
@@ -145,9 +180,17 @@ BOOLEAN AllocSystemData(PSYSTEM_DATA systemData)
 		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmcs region init failed\n"));
 		return FALSE;
 	}
+	
+	systemData->eptp = InitEpt();
+	if (!(systemData->eptp))
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] ept init failed\n"));
+		return FALSE;
+	}
 
 	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, 
 		"[*] SystemData initialized, addr: %p\n", systemData));
+
 	return TRUE;
 }
 
@@ -157,47 +200,67 @@ VOID DeallocSystemData(PSYSTEM_DATA systemData)
 	DeallocVmcsRegion(systemData->vmcsRegion);
 }
 
-BOOLEAN WvsrRunVm() 
+NTSTATUS WvsrInitVm() 
 {
-#if UNICORE == 1
-	int processorCount = 1;
-#else
-	int processorCount = 3;
-#endif
-	gSystemData = (PSYSTEM_DATA)ExAllocatePoolWithTag(NonPagedPool, processorCount * sizeof(SYSTEM_DATA), WVSR_TAG);
+	gSystemData = (PSYSTEM_DATA)ExAllocatePoolWithTag(NonPagedPool, CPU_COUNT * sizeof(SYSTEM_DATA), WVSR_TAG);
 	if (gSystemData == NULL)
 	{
-		return FALSE;
+		return STATUS_UNSUCCESSFUL;
 	}
-	for (int i = 0; i < processorCount; i++)
+	for (int i = 0; i < CPU_COUNT; i++)
 	{
 		KeSetSystemAffinityThread(1 << i); // Schedule the i-th logic processor
-		if (AllocSystemData(&gSystemData[i]) == FALSE)
+		if (!(AllocSystemData(&gSystemData[i])))
 		{
 			KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] Allocation failed for core %d\n", i));
-			return FALSE;
+			return STATUS_UNSUCCESSFUL;
 		}
-		if (VmxonOp(WvsrPaFromVa((&gSystemData[i])->vmxonRegion)) == FALSE)
+		if (!(VmxonOp(WvsrPaFromVa((&gSystemData[i])->vmxonRegion))))
 		{
 			KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmxon failed for core %d\n", i));
-			return FALSE;
-		}
-		if (VmptrldOp(WvsrPaFromVa((&gSystemData[i])->vmcsRegion)) == FALSE)
-		{
-			KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmptrld failed for core %d\n", i));
-			return FALSE;
+			return STATUS_UNSUCCESSFUL;
 		}
 		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] core %d running in vmx root\n", i));
 	}
 
-	return TRUE;
+	return STATUS_SUCCESS;
+}
+
+VOID WvsrStartVm(UINT32 processorId, NTSTATUS* ntStatus)
+{
+	UINT64 status = 0;
+
+	KeSetSystemAffinityThread(1 << processorId);
+
+	// Enter "Inactive, Not Current, Clear" state (see Intel SDM Sep.2023 Figure 25-1)
+	if (!(VmclearOp(WvsrPaFromVa((&gSystemData[processorId])->vmcsRegion))))
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmclear failed for core %d\n", processorId));
+		return STATUS_UNSUCCESSFUL;
+	}
+
+	// Enter "Active, Current, Clear" state (see Intel SD Sep.2023 Figure 25-1)
+	if (!(VmptrldOp(WvsrPaFromVa((&gSystemData[processorId])->vmcsRegion))))
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmptrld failed for core %d\n", processorId));
+		return STATUS_UNSUCCESSFUL;
+	}
+
+	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] Launching core %d\n", processorId));
+	__vmx_vmlaunch();
+		
+	__vmx_vmread(VM_INSTRUCTION_ERROR, status);
+	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] Error Launching core %d\n Error: %llx\n", processorId, status));
+
+	*ntStatus = STATUS_UNSUCCESSFUL;
 }
 
 VOID WvsrStopVm()
 {
 	for (int i = 0; i < CPU_COUNT; i++)
 	{
-		KeSetSystemAffinityThread(1 << i); // Schedule the i-th logic processor
+		// Schedule the i-th logic processor
+		KeSetSystemAffinityThread(1 << i); 
 		VmxoffOp();
 		DeallocSystemData(&gSystemData[i]);
 		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] Stopping core %d\n", i));

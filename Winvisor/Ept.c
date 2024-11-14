@@ -103,25 +103,3 @@ PEPTP InitEpt()
 	
 	return eptp;
 }
-
-/*
-* To invalidate a single ept pass SINGLE_CONTEXT and the EPTP.
-* To invalidate all epts pass GLOBAL CONTEXT and NULL.
-*/
-VOID InveptOp(int inveptType, EPTP eptp)
-{
-	switch (inveptType)
-	{
-		case GLOBAL_CONTEXT:
-			AsmInveptOp(GLOBAL_CONTEXT, NULL);
-			break;
-		case SINGLE_CONTEXT: 
-		{
-			INVEPT_DESC inveptDesc = { eptp, 0 };
-			AsmInveptOp(SINGLE_CONTEXT, &inveptDesc);
-			break;
-		}
-		default:
-			break;
-	}
-}
