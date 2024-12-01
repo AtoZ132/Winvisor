@@ -116,17 +116,17 @@ VOID VmxoffOp()
 * To invalidate a single ept pass SINGLE_CONTEXT and the EPTP.
 * To invalidate all epts pass GLOBAL CONTEXT and NULL.
 */
-VOID InveptOp(int inveptType, EPTP eptp)
+VOID VmxInveptOp(int inveptType, EPTP eptp)
 {
 	switch (inveptType)
 	{
 	case GLOBAL_CONTEXT:
-		AsmInveptOp(GLOBAL_CONTEXT, NULL);
+		InveptOp(GLOBAL_CONTEXT, NULL);
 		break;
 	case SINGLE_CONTEXT:
 	{
 		INVEPT_DESC inveptDesc = { eptp, 0 };
-		AsmInveptOp(SINGLE_CONTEXT, &inveptDesc);
+		InveptOp(SINGLE_CONTEXT, &inveptDesc);
 		break;
 	}
 	default:
@@ -209,7 +209,10 @@ NTSTATUS WvsrInitVm()
 	}
 	for (int i = 0; i < CPU_COUNT; i++)
 	{
-		KeSetSystemAffinityThread(1 << i); // Schedule the i-th logic processor
+		// Schedule the i-th logic processor
+		KeSetSystemAffinityThread(1 << i);
+
+		// Allocate and init VM resources
 		if (!(AllocSystemData(&gSystemData[i])))
 		{
 			KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] Allocation failed for core %d\n", i));
@@ -249,7 +252,7 @@ VOID WvsrStartVm(UINT32 processorId, NTSTATUS* ntStatus)
 	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] Launching core %d\n", processorId));
 	__vmx_vmlaunch();
 		
-	__vmx_vmread(VM_INSTRUCTION_ERROR, status);
+	__vmx_vmread(VM_INSTRUCTION_ERROR, &status);
 	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] Error Launching core %d\n Error: %llx\n", processorId, status));
 
 	*ntStatus = STATUS_UNSUCCESSFUL;

@@ -5,6 +5,7 @@
 #include "WinvisorUtil.h"
 #include "Ept.h"
 
+
 // Set the define for unicore mode
 #define UNICORE 0
 
@@ -13,6 +14,106 @@
 #else
 #define CPU_COUNT 3
 #endif
+
+// Definitions of Primary Processor-Based VM-Execution Controls
+#define PIN_BASED_EXTERNAL_INTERRUPT_EXITING    (1U << 0)
+#define PIN_BASED_NMI_EXITING                   (1U << 3)
+#define PIN_BASED_VIRTUAL_NMIS                  (1U << 5)
+#define PIN_BASED_ACTIVATE_VMX_PREEMPTION_TIMER (1U << 6)
+#define PIN_BASED_PROCESS_POSTED_INTERRUPTS     (1U << 7)
+
+// Definitions of Primary Processor-Based VM-Execution Controls
+#define VMX_PRIMARY_BASED_INTERRUPT_WINDOW_EXITING    (1U << 2)
+#define VMX_PRIMARY_BASED_USE_TSC_OFFSETTING          (1U << 3)
+#define VMX_PRIMARY_BASED_HLT_EXITING                 (1U << 7)
+#define VMX_PRIMARY_BASED_INVLPG_EXITING              (1U << 9)
+#define VMX_PRIMARY_BASED_MWAIT_EXITING               (1U << 10) 
+#define VMX_PRIMARY_BASED_RDPMC_EXITING               (1U << 11) 
+#define VMX_PRIMARY_BASED_RDTSC_EXITING               (1U << 12) 
+#define VMX_PRIMARY_BASED_CR3_LOAD_EXITING            (1U << 15)
+#define VMX_PRIMARY_BASED_CR3_STORE_EXITING           (1U << 16)
+#define VMX_PRIMARY_BASED_ACTIVATE_TERTIARY_CONTROLS  (1U << 17)
+#define VMX_PRIMARY_BASED_CR8_LOAD_EXITING            (1U << 19)
+#define VMX_PRIMARY_BASED_CR8_STORE_EXITING           (1U << 20) 
+#define VMX_PRIMARY_BASED_USE_TPR_SHADOW              (1U << 21)
+#define VMX_PRIMARY_BASED_NMI_WINDOW_EXITING          (1U << 22)
+#define VMX_PRIMARY_BASED_MOV_DR_EXITING              (1U << 23)
+#define VMX_PRIMARY_BASED_UNCONDITIONAL_IO_EXITING    (1U << 24)
+#define VMX_PRIMARY_BASED_USE_IO_BITMAPS              (1U << 25)
+#define VMX_PRIMARY_BASED_MONITOR_TRAP_FLAG           (1U << 27)
+#define VMX_PRIMARY_BASED_USE_MSR_BITMAPS             (1U << 28)
+#define VMX_PRIMARY_BASED_MONITOR_EXITING             (1U << 29)
+#define VMX_PRIMARY_BASED_PAUSE_EXITING               (1U << 30)
+#define VMX_PRIMARY_BASED_ACTIVATE_SECONDARY_CONTROLS (1U << 31)
+
+// Definitions of Secondary Processor-Based VM-Execution Controls
+#define VMX_SECONDARY_BASED_VIRTUALIZE_APIC_ACCESSES               (1U << 0)
+#define VMX_SECONDARY_BASED_ENABLE_EPT                             (1U << 1) 
+#define VMX_SECONDARY_BASED_DESCRIPTOR_TABLE_EXITING               (1U << 2)
+#define VMX_SECONDARY_BASED_ENABLE_RDTSCP                          (1U << 3)
+#define VMX_SECONDARY_BASED_VIRTUALIZE_X2APIC_MODE                 (1U << 4)
+#define VMX_SECONDARY_BASED_ENABLE_VPID                            (1U << 5)
+#define VMX_SECONDARY_BASED_WBINVD_EXITING                         (1U << 6)
+#define VMX_SECONDARY_BASED_UNRESTRICTED_GUEST                     (1U << 7)
+#define VMX_SECONDARY_BASED_APIC_REGISTER_VIRTUALIZATION           (1U << 8)
+#define VMX_SECONDARY_BASED_VIRTUAL_INTERRUPT_DELIVERY             (1U << 9)
+#define VMX_SECONDARY_BASED_PAUSE_LOOP_EXITING                     (1U << 10)
+#define VMX_SECONDARY_BASED_RDRAND_EXITING                         (1U << 11)
+#define VMX_SECONDARY_BASED_ENABLE_INVPCID                         (1U << 12)
+#define VMX_SECONDARY_BASED_ENABLE_VM_FUNCTIONS                    (1U << 13)
+#define VMX_SECONDARY_BASED_VMCS_SHADOWING                         (1U << 14)
+#define VMX_SECONDARY_BASED_ENABLE_ENCLS_EXITING                   (1U << 15)
+#define VMX_SECONDARY_BASED_RDSEED_EXITING                         (1U << 16)
+#define VMX_SECONDARY_BASED_ENABLE_PML                             (1U << 17)
+#define VMX_SECONDARY_BASED_EPT_VIOLATION_VE                       (1U << 18)
+#define VMX_SECONDARY_BASED_CONCEAL_VMX_FROM_PT                    (1U << 19)
+#define VMX_SECONDARY_BASED_ENABLE_XSAVES_XRSTORS                  (1U << 20)
+#define VMX_SECONDARY_BASED_PASID_TRANSLATION                      (1U << 21)
+#define VMX_SECONDARY_BASED_MODE_BASED_EXECUTE_CONTROL_FOR_EPT     (1U << 22)
+#define VMX_SECONDARY_BASED_SUB_PAGE_WRITE_PREMISSIONS_FOR_EPT     (1U << 23)
+#define VMX_SECONDARY_BASED_INTEL_PT_USES_GUEST_PHYSICAL_ADDRESSES (1U << 24)
+#define VMX_SECONDARY_BASED_USE_TSC_SCALING                        (1U << 25)
+#define VMX_SECONDARY_BASED_ENABLE_USER_WAIT_AND_PAUSE             (1U << 26)
+#define VMX_SECONDARY_BASED_ENABLE_PCONFIG                         (1U << 27)
+#define VMX_SECONDARY_BASED_ENABLE_ENCLV_EXITING                   (1U << 28)
+#define VMX_SECONDARY_BASED_VMM_BUS_LOCK_DETECTION                 (1U << 30)
+#define VMX_SECONDARY_BASED_INSTRUCTION_TIMEOUT                    (1U << 31)
+
+// Definitions of Primary VM-Exit Controls
+#define VM_EXIT_SAVE_DEBUG_CONTROLS       (1U << 2)
+#define VM_EXIT_HOST_ADDR_SPACE_SIZE      (1U << 9)
+#define VM_EXIT_LOAD_PERF_GLOBAL_CTRL     (1U << 12)
+#define VM_EXIT_ACK_INTERRUPT_ON_EXIT     (1U << 15)
+#define VM_EXIT_SAVE_IA32_PAT             (1U << 18) 
+#define VM_EXIT_LOAD_IA32_PAT             (1U << 19)
+#define VM_EXIT_SAVE_IA32_EFER            (1U << 20) 
+#define VM_EXIT_LOAD_IA32_EFER            (1U << 21)
+#define VM_EXIT_SAVE_PREEMPTION_TIMER     (1U << 22)
+#define VM_EXIT_CLEAR_IA32_BNDCFGS        (1U << 23)
+#define VM_EXIT_CONCEAL_VMX_FROM_PT       (1U << 24)
+#define VM_EXIT_CLEAR_IA32_RTIT_CTL       (1U << 25)
+#define VM_EXIT_CLEAR_IA32_LBR_CTL        (1U << 26)
+#define VM_EXIT_CLEAR_UINV                (1U << 27) 
+#define VM_EXIT_LOAD_CET_STATE            (1U << 28)
+#define VM_EXIT_LOAD_PKRS                 (1U << 29)
+#define VM_EXIT_SAVE_PERF_GLOBAL_CTRL     (1U << 30)
+#define VM_EXIT_ACTIVATE_SECONDARY_CTRL   (1U << 31)
+
+// Definitions of VM-Entry Controls
+#define VMX_ENTRY_LOAD_DEBUG_CONTROLS               (1 << 2)
+#define VMX_ENTRY_IA32E_MODE_GUEST                  (1 << 9)
+#define VMX_ENTRY_TO_SMM                            (1 << 10)
+#define VMX_ENTRY_DEACTIVATE_DUAL_MONITOR_TREATMENT (1 << 11)
+#define VMX_ENTRY_LOAD_IA32_PERF_GLOBAL_CTRL        (1 << 13)
+#define VMX_ENTRY_LOAD_IA32_PAT                     (1 << 14)
+#define VMX_ENTRY_LOAD_IA32_EFER                    (1 << 15)
+#define VMX_ENTRY_LOAD_IA32_BNDCFGS                 (1 << 16)
+#define VMX_ENTRY_CONCEAL_VMX_FROM_PT               (1 << 17)
+#define VMX_ENTRY_LOAD_IA32_RTIT_CTL                (1 << 18)
+#define VMX_ENTRY_LOAD_UINV                         (1 << 19)
+#define VMX_ENTRY_LOAD_CET_STATE                    (1 << 20)
+#define VMX_ENTRY_LOAD_GUEST_IA32_LBR_CTL           (1 << 21)
+#define VMX_ENTRY_LOAD_PKRS                         (1 << 22)
 
 
 /*
@@ -373,7 +474,7 @@ typedef enum INVEPT_TYPE
 
 
 // extern
-extern void inline AsmInveptOp(int inveptType, PVOID inveptDesc);
+extern void inline InveptOp(int inveptType, PVOID inveptDesc);
 
 
 NTSTATUS CheckVmxSupport();
@@ -381,7 +482,7 @@ BOOLEAN VmxonOp(UINT64* vmxonRegionPhysical);
 BOOLEAN VmptrldOp(UINT64* vmcsPhysical);
 BOOLEAN VmclearOp(UINT64* vmcsPhysicalAddress);
 VOID VmxoffOp();
-VOID InveptOp(int inveptType, EPTP eptp);
+VOID VmxInveptOp(int inveptType, EPTP eptp);
 UINT64* InitVmcsRegion();
 VOID DeallocVmcsRegion(UINT64* vmcsRegionPhysical);
 BOOLEAN AllocSystemData(PSYSTEM_DATA systemData);

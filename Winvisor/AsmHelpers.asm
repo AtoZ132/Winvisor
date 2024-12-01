@@ -1,14 +1,123 @@
-PUBLIC AsmInveptOp
+PUBLIC InveptOp
+PUBLIC GetGDTBase
+PUBLIC GetGDTLimit
+PUBLIC GetIDTBase
+PUBLIC GetIDTLimit
+PUBLIC GetTR
+PUBLIC GetCS
+PUBLIC GetDS
+PUBLIC GetSS
+PUBLIC GetES
+PUBLIC GetFS
+PUBLIC GetGS
+PUBLIC GetRflags
 
 _text SEGMENT
 
 ; Invept Assembly procedure helper
-AsmInveptOp PROC public
+InveptOp PROC PUBLIC
 
-invept RCX, OWORD PTR [RDX]
-ret
+INVEPT RCX, OWORD PTR [RDX]
+RET
 
-AsmInveptOp ENDP
+InveptOp ENDP
+
+; The 16-bit limit field of the register is stored in the low 2 bytes 
+; And the 64-bit base address is stored in the high 8 bytes.
+GetGDTBase PROC PUBLIC
+
+LOCAL GDTR[10]:BYTE
+SGDT GDTR
+MOV RAX, QWORD PTR GDTR[2]
+RET
+
+GetGDTBase ENDP
+
+GetGDTLimit PROC PUBLIC
+
+LOCAL GDTR[10]:BYTE
+SGDT GDTR
+MOV RAX, WORD PTR GDTR[0]
+RET
+
+GetGDTLimit ENDP
+
+; The 16-bit limit field of the register is stored in the low 2 bytes 
+; And the 64-bit base address is stored in the high 8 bytes.
+GetIDTBase PROC PUBLIC
+
+LOCAL IDTR[10]:BYTE
+SIDT IDTR
+MOV RAX, QWORD PTR IDTR[2]
+RET
+
+GetIDTBase ENDP
+
+GetIDTLimit PROC PUBLIC
+
+LOCAL IDTR[10]:BYTE
+SIDT IDTR
+MOV RAX, WORD PTR IDTR[0]
+RET
+
+GetIDTLimit ENDP
+
+GetTR PROC PUBLIC
+
+STR RAX
+RET
+
+GetTR ENDP
+
+GetCS PROC PUBLIC
+
+MOV RAX, CS
+RET
+
+GetCS ENDP
+
+GetDS PROC PUBLIC
+
+MOV RAX, DS
+RET
+
+GetDS ENDP
+
+GetSS PROC PUBLIC
+
+MOV RAX, SS
+RET
+
+GetSS ENDP
+
+GetES PROC PUBLIC
+
+MOV RAX, ES
+RET
+
+GetES ENDP
+
+GetFS PROC PUBLIC
+
+MOV RAX, FS
+RET
+
+GetFS ENDP
+
+GetGS PROC PUBLIC
+
+MOV RAX, GS
+RET
+
+GetGS ENDP
+
+GetRflags PROC PUBLIC
+
+PUSHFQ
+POP RAX
+RET
+
+GetRflags ENDP
 
 _text ENDS
 END
