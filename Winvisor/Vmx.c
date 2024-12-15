@@ -98,7 +98,6 @@ BOOLEAN VmclearOp(UINT64* vmcsPhysicalAddress)
 	return TRUE;
 }
 
-
 /*
 * vmxoff operation is a per preocessor method and affects only the "current" processor
 */
@@ -132,6 +131,86 @@ VOID VmxInveptOp(int inveptType, EPTP eptp)
 	default:
 		break;
 	}
+}
+
+BOOLEAN InitSegmentDescriptor(PUINT8 gdtBase, UINT16 segmentSelector, PSEGMENT_DESCRIPTOR segDesc)
+{
+	PRAW_SEGMENT_DESCRIPTOR rawSegDesc = { 0 };
+
+	if (!(segDesc))
+	{
+		return FALSE;
+	}
+
+	rawSegDesc = (PRAW_SEGMENT_DESCRIPTOR)(gdtBase + (segmentSelector & ~0x7));
+	segDesc->baseAddr = rawSegDesc->baseAddr0 | rawSegDesc->baseAddr1 << 16 | rawSegDesc->baseAddr2 << 24;
+	segDesc->segLimit = rawSegDesc->segLimit0 | (rawSegDesc->seglimit1_flags & 0xf) << 16;
+	segDesc->flags.flags = rawSegDesc->seglimit1_flags & 0xf0;
+	segDesc->accessByte.flags = rawSegDesc->accessByte;
+
+	if (segDesc->flags.Bitfield.G)
+	{
+		segDesc->segLimit = (segDesc->segLimit << 12) + 0xfff;
+	}
+
+	if (!(segDesc->accessByte.Bitfield.S))
+	{
+		UINT64 highAddr = *(PUINT64)((PUINT8)rawSegDesc + 8);
+		segDesc->baseAddr = (segDesc->baseAddr & 0xffffffff) | (highAddr << 32);
+	}
+
+	return TRUE;
+}
+
+BOOLEAN SetupGuestSelectorFields(PUINT8 gdtBase, UINT16 segmentSelector, UINT16 segmentSelectorIndex)
+{
+	SEGMENT_DESCRIPTOR segDesc = { 0 };
+
+	if (!(InitSegmentDescriptor(gdtBase, segmentSelector, &segDesc)))
+	{
+		return FALSE;
+	}
+
+	__vmx_vmwrite(GUEST_ES_LIMIT + segmentSelectorIndex * 2, segDesc.segLimit);
+	__vmx_vmwrite(GUEST_ES_ACCESS_RIGHTS + segmentSelectorIndex * 2, segDesc.accessByte.flags);
+	__vmx_vmwrite(GUEST_ES_SELECTOR + segmentSelectorIndex * 2, segmentSelector);
+	__vmx_vmwrite(GUEST_ES_BASE + segmentSelectorIndex * 2, segDesc.baseAddr);
+
+	return TRUE;
+}
+
+BOOLEAN SetupVmcs()
+{
+	// 27.2.3: In the selector field for each of CS, SS, DS, ES, FS, GS, and TR, 
+	// the RPL (bits 1:0) and the TI flag (bit 2) must be 0.
+	__vmx_vmwrite(HOST_CS_SELECTOR, GetCS() & 0xF8);
+	__vmx_vmwrite(HOST_SS_SELECTOR, GetSS() & 0xF8);
+	__vmx_vmwrite(HOST_DS_SELECTOR, GetDS() & 0xF8);
+	__vmx_vmwrite(HOST_ES_SELECTOR, GetES() & 0xF8);
+	__vmx_vmwrite(HOST_FS_SELECTOR, GetFS() & 0xF8);
+	__vmx_vmwrite(HOST_GS_SELECTOR, GetGS() & 0xF8);
+	__vmx_vmwrite(HOST_TR_SELECTOR, GetTR() & 0xF8);
+
+	// 27.3.1.5 "VMCS link pointer. The following checks apply if the field contains a value other than 
+	// FFFFFFFF_FFFFFFFFH" related to VMCS shadowing
+	__vmx_vmwrite(VMCS_LINK_POINTER_FULL, ~0ULL);
+
+	PUINT8 gdtBase = GetGDTBase();
+	if (!(SetupGuestSelectorFields(gdtBase, ES, GetES())) ||
+		!(SetupGuestSelectorFields(gdtBase, CS, GetCS())) ||
+		!(SetupGuestSelectorFields(gdtBase, SS, GetSS())) ||
+		!(SetupGuestSelectorFields(gdtBase, DS, GetDS())) ||
+		!(SetupGuestSelectorFields(gdtBase, FS, GetFS())) ||
+		!(SetupGuestSelectorFields(gdtBase, GS, GetGS())) ||
+		!(SetupGuestSelectorFields(gdtBase, LDTR, GetLDTR())) ||
+		!(SetupGuestSelectorFields(gdtBase, TR, GetTR())))
+	{
+		return FALSE;
+	}
+
+
+
+	return TRUE;
 }
 
 /*

@@ -137,22 +137,22 @@ typedef struct _SYSTEM_DATA
 	PVMCS_REGION vmxonRegion;
 	PVMCS_REGION vmcsRegion;
 	PEPTP eptp;
-
 } SYSTEM_DATA, *PSYSTEM_DATA;
 
 typedef union _VMCS_COMP_ENCODING 
 {
 	struct 
 	{
-		int accessType : 1; 
-		int index : 9;
-		int type : 2;
-		int reserved : 1;
-		int width : 2;
-		int reserved2 : 17;
+		UINT32 accessType : 1; 
+		UINT32 index : 9;
+		UINT32 type : 2;
+		UINT32 reserved : 1;
+		UINT32 width : 2;
+		UINT32 reserved2 : 17;
 	} Bitfield;
 	UINT32 flags;
 } VMCS_COMP_ENCODING, *PVMCS_COMP_ENCODING;
+
 
 /*
 * (0 = full; 1 = high); must be full for 16-bit, 32-bit, and natural-width fields
@@ -211,21 +211,21 @@ enum VmcsFields
 	GUEST_SS_SELECTOR								= 0x00000804,
 	GUEST_DS_SELECTOR								= 0x00000806,
 	GUEST_FS_SELECTOR								= 0x00000808,
-	GUEST_GS_SELECTOR								= 0x0000080a,
-	GUEST_LDTR_SELECTOR								= 0x0000080c,
-	GUEST_TR_SELECTOR								= 0x0000080e,
+	GUEST_GS_SELECTOR								= 0x0000080A,
+	GUEST_LDTR_SELECTOR								= 0x0000080C,
+	GUEST_TR_SELECTOR								= 0x0000080E,
 	GUEST_INTERRUPT_STATUS							= 0x00000810,
 	PML_INDEX										= 0x00000812,
 	GUEST_UINV										= 0x00000814,
 													
 	// 16-Bit Host-State Fields						
-	HOST_ES_SELECTOR								= 0x00000c00,
-	HOST_CS_SELECTOR								= 0x00000c02,
-	HOST_SS_SELECTOR								= 0x00000c04,
-	HOST_DS_SELECTOR								= 0x00000c06,
-	HOST_FS_SELECTOR								= 0x00000c08,
-	HOST_GS_SELECTOR								= 0x00000c0a,
-	HOST_TR_SELECTOR								= 0x00000c0c,
+	HOST_ES_SELECTOR								= 0x00000C00,
+	HOST_CS_SELECTOR								= 0x00000C02,
+	HOST_SS_SELECTOR								= 0x00000C04,
+	HOST_DS_SELECTOR								= 0x00000C06,
+	HOST_FS_SELECTOR								= 0x00000C08,
+	HOST_GS_SELECTOR								= 0x00000C0A,
+	HOST_TR_SELECTOR								= 0x00000C0C,
 													
 	// 64-Bit Control Fields						
 	ADDR_OF_IO_BITMAP_A_FULL						= 0x00002000,
@@ -238,12 +238,12 @@ enum VmcsFields
 	VMEXIT_MSR_STORE_ADDR_HIGH						= 0x00002007,
 	VMEXIT_MSR_LOAD_ADDR_FULL						= 0x00002008,
 	VMEXIT_MSR_LOAD_ADDR_HIGH						= 0x00002009,
-	VMENTRY_MSR_LOAD_ADDR_FULL						= 0x0000200a,
-	VMENTRY_MSR_LOAD_ADDR_HIGH						= 0x0000200b,
-	EXECUTIVE_VMCS_POINTER_FULL						= 0x0000200c,
-	EXECUTIVE_VMCS_POINTER_HIGH						= 0x0000200d,
-	PML_ADDR_FULL									= 0x0000200e,
-	PML_ADDR_HIGH			 						= 0x0000200f,
+	VMENTRY_MSR_LOAD_ADDR_FULL						= 0x0000200A,
+	VMENTRY_MSR_LOAD_ADDR_HIGH						= 0x0000200B,
+	EXECUTIVE_VMCS_POINTER_FULL						= 0x0000200C,
+	EXECUTIVE_VMCS_POINTER_HIGH						= 0x0000200D,
+	PML_ADDR_FULL									= 0x0000200E,
+	PML_ADDR_HIGH			 						= 0x0000200F,
 	TSC_OFFSET_FULL				 					= 0x00002010,
 	TSC_OFFSET_HIGH									= 0x00002011,
 	VIRTUAL_APIC_ADDR_FULL							= 0x00002012,
@@ -254,12 +254,12 @@ enum VmcsFields
 	POSTED_INTERRUPT_DESCRIPTOR_ADDR_HIGH			= 0x00002017,
 	VM_FUNCTION_CONTROLS_FULL						= 0x00002018,
 	VM_FUNCTION_CONTROLS_HIGH						= 0x00002019,
-	EPT_POINTER_FULL								= 0x0000201a,
-	EPT_POINTER_HIGH								= 0x0000201b,
-	EOI_EXIT_BITMAP0_FULL							= 0x0000201c,
-	EOI_EXIT_BITMAP0_HIGH							= 0x0000201d,
-	EOI_EXIT_BITMAP1_FULL							= 0x0000201e,
-	EOI_EXIT_BITMAP1_HIGH							= 0x0000201f,
+	EPT_POINTER_FULL								= 0x0000201A,
+	EPT_POINTER_HIGH								= 0x0000201B,
+	EOI_EXIT_BITMAP0_FULL							= 0x0000201C,
+	EOI_EXIT_BITMAP0_HIGH							= 0x0000201D,
+	EOI_EXIT_BITMAP1_FULL							= 0x0000201E,
+	EOI_EXIT_BITMAP1_HIGH							= 0x0000201F,
 	EOI_EXIT_BITMAP2_FULL							= 0x00002020,
 	EOI_EXIT_BITMAP2_HIGH							= 0x00002021,
 	EOI_EXIT_BITMAP3_FULL							= 0x00002022,
@@ -473,8 +473,21 @@ typedef enum INVEPT_TYPE
 };
 
 
-// extern
+// externals
 extern void inline InveptOp(int inveptType, PVOID inveptDesc);
+extern UINT64 inline GetGDTBase();
+extern UINT16 inline GetGDTLimit();
+extern UINT64 inline GetIDTBase();
+extern UINT16 inline GetIDTLimit();
+extern UINT16 inline GetTR();
+extern UINT16 inline GetCS();
+extern UINT16 inline GetDS();
+extern UINT16 inline GetSS();
+extern UINT16 inline GetES();
+extern UINT16 inline GetFS();
+extern UINT16 inline GetGS();
+extern UINT64 inline GetRflags();
+extern UINT64 inline GetLDTR();
 
 
 NTSTATUS CheckVmxSupport();
@@ -483,6 +496,9 @@ BOOLEAN VmptrldOp(UINT64* vmcsPhysical);
 BOOLEAN VmclearOp(UINT64* vmcsPhysicalAddress);
 VOID VmxoffOp();
 VOID VmxInveptOp(int inveptType, EPTP eptp);
+BOOLEAN InitSegmentDescriptor(PUINT8 gdtBase, UINT16 segmentSelector, PSEGMENT_DESCRIPTOR segDesc);
+BOOLEAN SetupGuestSelectorFields(PUINT8 gdtBase, UINT16 segmentSelector, UINT16 segmentSelectorIndex);
+BOOLEAN SetupVmcs();
 UINT64* InitVmcsRegion();
 VOID DeallocVmcsRegion(UINT64* vmcsRegionPhysical);
 BOOLEAN AllocSystemData(PSYSTEM_DATA systemData);
