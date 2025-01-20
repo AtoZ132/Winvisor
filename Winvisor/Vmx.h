@@ -498,6 +498,7 @@ VOID VmxoffOp();
 VOID VmxInveptOp(int inveptType, EPTP eptp);
 BOOLEAN InitSegmentDescriptor(PUINT8 gdtBase, UINT16 segmentSelector, PSEGMENT_DESCRIPTOR segDesc);
 BOOLEAN SetupGuestSelectorFields(PUINT8 gdtBase, UINT16 segmentSelector, UINT16 segmentSelectorIndex);
+UINT32 AdjustVmcsControlField(UINT32 controls, ULONG msrAddr);
 BOOLEAN SetupVmcs();
 UINT64* InitVmcsRegion();
 VOID DeallocVmcsRegion(UINT64* vmcsRegionPhysical);

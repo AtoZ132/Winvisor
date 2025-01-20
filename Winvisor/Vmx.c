@@ -179,6 +179,17 @@ BOOLEAN SetupGuestSelectorFields(PUINT8 gdtBase, UINT16 segmentSelector, UINT16 
 	return TRUE;
 }
 
+UINT32 AdjustVmcsControlField(UINT32 controls, ULONG msrAddr)
+{
+	MSR msr = { 0 };
+	msr.flags = __readmsr(msrAddr);
+
+	controls &= msr.Fields.high;
+	controls |= msr.Fields.high;
+
+	return controls;
+}
+
 BOOLEAN SetupVmcs()
 {
 	// 27.2.3: In the selector field for each of CS, SS, DS, ES, FS, GS, and TR, 
@@ -208,7 +219,56 @@ BOOLEAN SetupVmcs()
 		return FALSE;
 	}
 
+	__vmx_vmwrite(GUEST_FS_BASE, __readmsr(IA32_FS_BASE));
+	__vmx_vmwrite(GUEST_GS_BASE, __readmsr(IA32_GS_BASE));
 
+	// Setup VM-Execution Controls
+	__vmx_vmwrite(PRIMARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS,
+		AdjustVmcsControlField(VMX_PRIMARY_BASED_HLT_EXITING | VMX_PRIMARY_BASED_ACTIVATE_SECONDARY_CONTROLS,
+			IA32_VMX_PROCBASED_CTLS));
+	__vmx_vmwrite(SECONDARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS,
+		AdjustVmcsControlField(VMX_SECONDARY_BASED_ENABLE_RDTSCP, IA32_VMX_PROCBASED_CTLS2));
+	__vmx_vmwrite(PIN_BASED_VM_EXECUTION_CONTROLS,
+		AdjustVmcsControlField(0, IA32_VMX_PINBASED_CTLS));
+	__vmx_vmwrite(PRIMARY_VM_EXIT_CONTROLS,
+		AdjustVmcsControlField(VM_EXIT_HOST_ADDR_SPACE_SIZE | VM_EXIT_ACK_INTERRUPT_ON_EXIT, IA32_VMX_EXIT_CTLS));
+	__vmx_vmwrite(VM_ENTRY_CONTROLS,
+		AdjustVmcsControlField(VMX_ENTRY_IA32E_MODE_GUEST, IA32_VMX_ENTRY_CTLS));
+
+	__vmx_vmwrite(GUEST_CR0, __readcr0());
+	__vmx_vmwrite(GUEST_CR3, __readcr3());
+	__vmx_vmwrite(GUEST_CR4, __readcr4());
+	__vmx_vmwrite(GUEST_DR7, (1 << 10));
+	
+	__vmx_vmwrite(HOST_CR0, __readcr0());
+	__vmx_vmwrite(HOST_CR3, __readcr3());
+	__vmx_vmwrite(HOST_CR4, __readcr4());
+
+	__vmx_vmwrite(GUEST_GDTR_BASE, GetGDTBase());
+	__vmx_vmwrite(GUEST_IDTR_BASE, GetIDTBase());
+	__vmx_vmwrite(GUEST_GDTR_LIMIT, GetGDTLimit());
+	__vmx_vmwrite(GUEST_IDTR_LIMIT, GetIDTLimit());
+	__vmx_vmwrite(GUEST_RFLAGS, GetRflags());
+	
+	__vmx_vmwrite(GUEST_IA32_SYSENTER_CS, __readmsr(IA32_SYSENTER_CS));
+	__vmx_vmwrite(GUEST_IA32_SYSENTER_EIP, __readmsr(IA32_SYSENTER_EIP));
+	__vmx_vmwrite(GUEST_IA32_SYSENTER_ESP, __readmsr(IA32_SYSENTER_ESP));
+
+	SEGMENT_DESCRIPTOR segDesc = { 0 };
+	if (!(InitSegmentDescriptor(gdtBase, getTR(), &segDesc)))
+	{
+		return FALSE;
+	}
+	__vmx_vmwrite(HOST_TR_BASE, segDesc.baseAddr);
+
+	__vmx_vmwrite(HOST_FS_BASE, __readmsr(IA32_FS_BASE));
+	__vmx_vmwrite(HOST_GS_BASE, __readmsr(IA32_GS_BASE));
+	__vmx_vmwrite(HOST_GDTR_BASE, GetGDTBase());
+	__vmx_vmwrite(HOST_IDTR_BASE, GetIDTBase());
+
+	__vmx_vmwrite(HOST_IA32_SYSENTER_CS, __readmsr(IA32_SYSENTER_CS));
+	__vmx_vmwrite(HOST_IA32_SYSENTER_EIP, __readmsr(IA32_SYSENTER_EIP));
+	__vmx_vmwrite(HOST_IA32_SYSENTER_ESP, __readmsr(IA32_SYSENTER_ESP));
 
 	return TRUE;
 }
@@ -325,6 +385,12 @@ VOID WvsrStartVm(UINT32 processorId, NTSTATUS* ntStatus)
 	if (!(VmptrldOp(WvsrPaFromVa((&gSystemData[processorId])->vmcsRegion))))
 	{
 		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmptrld failed for core %d\n", processorId));
+		return STATUS_UNSUCCESSFUL;
+	}
+
+	if (!SetupVmcs())
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmcs setup failed for core %d\n", processorId));
 		return STATUS_UNSUCCESSFUL;
 	}
 

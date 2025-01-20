@@ -1,11 +1,22 @@
 #pragma once
 
 
-// MSR numbers
-#define IA32_FEATURE_CONTROL 0x3a
+// MSR addresses
+#define IA32_FEATURE_CONTROL 0x3A
 #define IA32_FEATURE_CONTROL_LOCK_BIT 0x1
 #define IA32_FEATURE_CONTROL_VMXON_OUTSIDE_SMX 0x4
+#define IA32_SYSENTER_CS 0x174
+#define IA32_SYSENTER_ESP 0x175
+#define IA32_SYSENTER_EIP 0x176
 #define IA32_VMX_BASIC 0x480
+#define IA32_VMX_PINBASED_CTLS 0x481
+#define IA32_VMX_PROCBASED_CTLS 0x482
+#define IA32_VMX_EXIT_CTLS 0x483
+#define IA32_VMX_ENTRY_CTLS 0x484
+#define IA32_VMX_MISC 0x485
+#define IA32_VMX_PROCBASED_CTLS2 0x48B
+#define IA32_FS_BASE 0xC0000100
+#define IA32_GS_BASE 0xC0000101
 
 
 // MSR structures
@@ -73,6 +84,17 @@ typedef struct _SEGMENT_DESCRIPTOR
 	SEG_DESC_ACCESS_BYTE accessByte;
 	SEG_DESC_FLAGS flags;
 } SEGMENT_DESCRIPTOR, * PSEGMENT_DESCRIPTOR;
+
+typedef union _MSR
+{
+	struct
+	{
+		UINT32 low;
+		UINT32 high;
+	} Fields;
+
+	UINT64 flags;
+} MSR, * PMSR;
 
 
 enum SegmentSelector
