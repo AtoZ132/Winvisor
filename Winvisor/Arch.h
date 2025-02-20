@@ -9,12 +9,14 @@
 #define IA32_SYSENTER_ESP 0x175
 #define IA32_SYSENTER_EIP 0x176
 #define IA32_VMX_BASIC 0x480
+#define IA32_DEBUGCTL 0x1D9
 #define IA32_VMX_PINBASED_CTLS 0x481
 #define IA32_VMX_PROCBASED_CTLS 0x482
 #define IA32_VMX_EXIT_CTLS 0x483
 #define IA32_VMX_ENTRY_CTLS 0x484
 #define IA32_VMX_MISC 0x485
 #define IA32_VMX_PROCBASED_CTLS2 0x48B
+#define IA32_EFER 0xC0000080
 #define IA32_FS_BASE 0xC0000100
 #define IA32_GS_BASE 0xC0000101
 
@@ -50,39 +52,28 @@ typedef struct _RAW_SEGMENT_DESCRIPTOR
 	UINT8 baseAddr2; // bits 56-63
 } RAW_SEGMENT_DESCRIPTOR, * PRAW_SEGMENT_DESCRIPTOR;
 
-typedef union _SEG_DESC_ACCESS_BYTE
+typedef union _SEG_DESC_ACCESS_RIGHT
 {
 	struct
 	{
-		UINT8 A : 1; // Accessed bit
-		UINT8 RW : 1; // Readable bit/Writable bit
-		UINT8 DC : 1; // Direction bit/Conforming bit
-		UINT8 E : 1; // Executable bit
-		UINT8 S : 1; // Descriptor type bit
-		UINT8 DPL : 2; // Descriptor privilege level field
-		UINT8 P : 1; // Present bit
+		UINT16 TYPE : 4;
+		UINT16 S : 1;   
+		UINT16 DPL : 2; 
+		UINT16 P : 1;   
+		UINT16 AVL : 1; 
+		UINT16 L : 1;   
+		UINT16 DB : 1;  
+		UINT16 G : 1;   
+		UINT16 GAP : 4;
 	} Bitfield;
-	UINT8 flags;
-} SEG_DESC_ACCESS_BYTE, * PSEG_DESC_ACCESS_BYTE;
-
-typedef union _SEG_DESC_FLAGS
-{
-	struct
-	{
-		UINT8 reserved : 1;
-		UINT8 L : 1; // Long-mode code flag
-		UINT8 DB : 1; // Size flag
-		UINT8 G : 1; // Granularity flag
-	} Bitfield;
-	UINT8 flags;
-} SEG_DESC_FLAGS, * PSEG_DESC_FLAGS;
+	UINT16 flags;
+} SEG_DESC_ACCESS_RIGHT, * PSEG_DESC_ACCESS_RIGHT;
 
 typedef struct _SEGMENT_DESCRIPTOR
 {
 	UINT32 segLimit;
 	UINT64 baseAddr;
-	SEG_DESC_ACCESS_BYTE accessByte;
-	SEG_DESC_FLAGS flags;
+	SEG_DESC_ACCESS_RIGHT accessRight;
 } SEGMENT_DESCRIPTOR, * PSEGMENT_DESCRIPTOR;
 
 typedef union _MSR
@@ -95,6 +86,26 @@ typedef union _MSR
 
 	UINT64 flags;
 } MSR, * PMSR;
+
+typedef struct _REGS
+{
+	UINT64 rax;
+	UINT64 rcx;
+	UINT64 rdx;
+	UINT64 rbx;
+	UINT64 rsp;
+	UINT64 rbp;
+	UINT64 rsi;
+	UINT64 rdi;
+	UINT64 r8;
+	UINT64 r9;
+	UINT64 r10;
+	UINT64 r11;
+	UINT64 r12;
+	UINT64 r13;
+	UINT64 r14;
+	UINT64 r15;
+} REGS, *PREGS;
 
 
 enum SegmentSelector

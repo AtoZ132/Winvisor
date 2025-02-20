@@ -2,11 +2,11 @@
 #include <ntddk.h>
 #include "WinvisorUtil.h"
 
-#define TABLE_SIZE 512
 
 /*
 *  Implemented according to the Intel SDM ver. September 2023
 */
+#define TABLE_SIZE 512
 
 
 typedef union _EPTP
@@ -177,7 +177,6 @@ typedef struct _INVEPT_DESCRIPTOR
 	UINT64 reserved;
 } INVEPT_DESC, *PINVEPT_DESC;
 
-// Enums
 
 // EPT cache types
 typedef enum CACHE_TYPE 
@@ -188,6 +187,9 @@ typedef enum CACHE_TYPE
 	WP = 5, // Write Protected
 	WB = 6  // Write back
 };
+
+
+extern UINT64 gGuestMappedArea;
 
 
 PEPTP InitEpt();

@@ -2,6 +2,7 @@
 
 // Globals
 PSYSTEM_DATA gSystemData;
+UINT64 gGuestMappedArea;
 
 NTSTATUS CheckVmxSupport() 
 {
@@ -133,6 +134,23 @@ VOID VmxInveptOp(int inveptType, EPTP eptp)
 	}
 }
 
+VOID VmResumeErrorHandler()
+{
+	int errorCode = 0;
+	__vmx_vmread(VM_INSTRUCTION_ERROR, &errorCode);
+	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmresume failed, error code: %d\n", errorCode));
+}
+
+VOID IncementIp()
+{
+	UINT64 guestRip = 0;
+	UINT32 instructionLen = 0;
+	__vmx_vmread(GUEST_RIP, &guestRip);
+	__vmx_vmread(VM_EXIT_INSTRUCTION_LENGTH, &instructionLen);
+
+	__vmx_vmwrite(GUEST_RIP, guestRip + instructionLen);
+}
+
 BOOLEAN InitSegmentDescriptor(PUINT8 gdtBase, UINT16 segmentSelector, PSEGMENT_DESCRIPTOR segDesc)
 {
 	PRAW_SEGMENT_DESCRIPTOR rawSegDesc = { 0 };
@@ -143,17 +161,16 @@ BOOLEAN InitSegmentDescriptor(PUINT8 gdtBase, UINT16 segmentSelector, PSEGMENT_D
 	}
 
 	rawSegDesc = (PRAW_SEGMENT_DESCRIPTOR)(gdtBase + (segmentSelector & ~0x7));
-	segDesc->baseAddr = rawSegDesc->baseAddr0 | rawSegDesc->baseAddr1 << 16 | rawSegDesc->baseAddr2 << 24;
-	segDesc->segLimit = rawSegDesc->segLimit0 | (rawSegDesc->seglimit1_flags & 0xf) << 16;
-	segDesc->flags.flags = rawSegDesc->seglimit1_flags & 0xf0;
-	segDesc->accessByte.flags = rawSegDesc->accessByte;
+	segDesc->baseAddr = rawSegDesc->baseAddr0 | (rawSegDesc->baseAddr1 << 16) | (rawSegDesc->baseAddr2 << 24);
+	segDesc->segLimit = rawSegDesc->segLimit0 | ((rawSegDesc->seglimit1_flags & 0xf) << 16);;
+	segDesc->accessRight.flags = rawSegDesc->accessByte | ((rawSegDesc->seglimit1_flags & 0xf0) << 4);
 
-	if (segDesc->flags.Bitfield.G)
+	if (segDesc->accessRight.Bitfield.G)
 	{
 		segDesc->segLimit = (segDesc->segLimit << 12) + 0xfff;
 	}
 
-	if (!(segDesc->accessByte.Bitfield.S))
+	if (!(segDesc->accessRight.Bitfield.S))
 	{
 		UINT64 highAddr = *(PUINT64)((PUINT8)rawSegDesc + 8);
 		segDesc->baseAddr = (segDesc->baseAddr & 0xffffffff) | (highAddr << 32);
@@ -162,7 +179,7 @@ BOOLEAN InitSegmentDescriptor(PUINT8 gdtBase, UINT16 segmentSelector, PSEGMENT_D
 	return TRUE;
 }
 
-BOOLEAN SetupGuestSelectorFields(PUINT8 gdtBase, UINT16 segmentSelector, UINT16 segmentSelectorIndex)
+BOOLEAN SetupGuestSelectorFields(PUINT8 gdtBase, UINT16 segmentSelectorIndex, UINT16 segmentSelector)
 {
 	SEGMENT_DESCRIPTOR segDesc = { 0 };
 
@@ -171,8 +188,17 @@ BOOLEAN SetupGuestSelectorFields(PUINT8 gdtBase, UINT16 segmentSelector, UINT16 
 		return FALSE;
 	}
 
+	UINT32 accessRights = ((PUINT8)&segDesc.accessRight)[0] + (((PUINT8)&segDesc.accessRight)[1] << 12);
+	if (!segmentSelector)
+	{
+		accessRights |= 0x10000;
+	}
+
+	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF,
+		"[*] segDesc: index: %d, segDesc.Limit: %x, accessRights: %x, segDesc.baseAddr: %llx\n", 
+		segmentSelectorIndex, segDesc.segLimit, accessRights, segDesc.baseAddr));
 	__vmx_vmwrite(GUEST_ES_LIMIT + segmentSelectorIndex * 2, segDesc.segLimit);
-	__vmx_vmwrite(GUEST_ES_ACCESS_RIGHTS + segmentSelectorIndex * 2, segDesc.accessByte.flags);
+	__vmx_vmwrite(GUEST_ES_ACCESS_RIGHTS + segmentSelectorIndex * 2, accessRights);
 	__vmx_vmwrite(GUEST_ES_SELECTOR + segmentSelectorIndex * 2, segmentSelector);
 	__vmx_vmwrite(GUEST_ES_BASE + segmentSelectorIndex * 2, segDesc.baseAddr);
 
@@ -185,12 +211,12 @@ UINT32 AdjustVmcsControlField(UINT32 controls, ULONG msrAddr)
 	msr.flags = __readmsr(msrAddr);
 
 	controls &= msr.Fields.high;
-	controls |= msr.Fields.high;
+	controls |= msr.Fields.low;
 
 	return controls;
 }
 
-BOOLEAN SetupVmcs()
+BOOLEAN SetupVmcs(PSYSTEM_DATA systemData)
 {
 	// 27.2.3: In the selector field for each of CS, SS, DS, ES, FS, GS, and TR, 
 	// the RPL (bits 1:0) and the TI flag (bit 2) must be 0.
@@ -221,6 +247,9 @@ BOOLEAN SetupVmcs()
 
 	__vmx_vmwrite(GUEST_FS_BASE, __readmsr(IA32_FS_BASE));
 	__vmx_vmwrite(GUEST_GS_BASE, __readmsr(IA32_GS_BASE));
+	
+	__vmx_vmwrite(GUEST_INTERRUPTIBILITY_STATE, 0);
+	__vmx_vmwrite(GUEST_ACTIVITY_STATE, 0);
 
 	// Setup VM-Execution Controls
 	__vmx_vmwrite(PRIMARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS,
@@ -235,14 +264,29 @@ BOOLEAN SetupVmcs()
 	__vmx_vmwrite(VM_ENTRY_CONTROLS,
 		AdjustVmcsControlField(VMX_ENTRY_IA32E_MODE_GUEST, IA32_VMX_ENTRY_CTLS));
 
+	__vmx_vmwrite(CR3_TARGET_COUNT, 0);
+	__vmx_vmwrite(CR3_TARGET_VALUE_0, 0);
+	__vmx_vmwrite(CR3_TARGET_VALUE_1, 0);
+	__vmx_vmwrite(CR3_TARGET_VALUE_2, 0);
+	__vmx_vmwrite(CR3_TARGET_VALUE_3, 0);
+
+	__vmx_vmwrite(VM_ENTRY_MSR_LOAD_COUNT, 0);
+	__vmx_vmwrite(VM_ENTRY_INTERRUPTION_INFO_FIELD, 0);
+	__vmx_vmwrite(VM_EXIT_MSR_LOAD_COUNT, 0);
+	__vmx_vmwrite(VM_EXIT_MSR_STORE_COUNT, 0);
+
 	__vmx_vmwrite(GUEST_CR0, __readcr0());
 	__vmx_vmwrite(GUEST_CR3, __readcr3());
 	__vmx_vmwrite(GUEST_CR4, __readcr4());
 	__vmx_vmwrite(GUEST_DR7, (1 << 10));
+	__vmx_vmwrite(GUEST_IA32_DEBUGCTL_FULL, __readmsr(IA32_DEBUGCTL));
+	__vmx_vmwrite(GUEST_IA32_EFER_FULL, __readmsr(IA32_EFER));
+
 	
 	__vmx_vmwrite(HOST_CR0, __readcr0());
 	__vmx_vmwrite(HOST_CR3, __readcr3());
 	__vmx_vmwrite(HOST_CR4, __readcr4());
+	__vmx_vmwrite(HOST_IA32_EFER_FULL, __readmsr(IA32_EFER));
 
 	__vmx_vmwrite(GUEST_GDTR_BASE, GetGDTBase());
 	__vmx_vmwrite(GUEST_IDTR_BASE, GetIDTBase());
@@ -255,7 +299,7 @@ BOOLEAN SetupVmcs()
 	__vmx_vmwrite(GUEST_IA32_SYSENTER_ESP, __readmsr(IA32_SYSENTER_ESP));
 
 	SEGMENT_DESCRIPTOR segDesc = { 0 };
-	if (!(InitSegmentDescriptor(gdtBase, getTR(), &segDesc)))
+	if (!(InitSegmentDescriptor(gdtBase, GetTR(), &segDesc)))
 	{
 		return FALSE;
 	}
@@ -269,6 +313,13 @@ BOOLEAN SetupVmcs()
 	__vmx_vmwrite(HOST_IA32_SYSENTER_CS, __readmsr(IA32_SYSENTER_CS));
 	__vmx_vmwrite(HOST_IA32_SYSENTER_EIP, __readmsr(IA32_SYSENTER_EIP));
 	__vmx_vmwrite(HOST_IA32_SYSENTER_ESP, __readmsr(IA32_SYSENTER_ESP));
+
+
+	__vmx_vmwrite(GUEST_RIP, gGuestMappedArea);
+	__vmx_vmwrite(GUEST_RSP, gGuestMappedArea);
+
+	__vmx_vmwrite(HOST_RSP, (UINT64)(systemData->vmmStack + VMM_STACK_SIZE - 1));
+	__vmx_vmwrite(HOST_RIP, (UINT64)VmExitHandler);
 
 	return TRUE;
 }
@@ -320,6 +371,14 @@ BOOLEAN AllocSystemData(PSYSTEM_DATA systemData)
 		return FALSE;
 	}
 	
+	// The size of the kernel-mode stack is limited to approximately three pages
+	systemData->vmmStack = ExAllocatePoolWithTag(NonPagedPool, VMM_STACK_SIZE, WVSR_TAG);
+	if (!systemData->vmmStack)
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] Failed to allocate vmmStack\n"));
+		return FALSE;
+	}
+
 	systemData->eptp = InitEpt();
 	if (!(systemData->eptp))
 	{
@@ -327,8 +386,7 @@ BOOLEAN AllocSystemData(PSYSTEM_DATA systemData)
 		return FALSE;
 	}
 
-	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, 
-		"[*] SystemData initialized, addr: %p\n", systemData));
+	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] SystemData initialized, addr: %p\n", systemData));
 
 	return TRUE;
 }
@@ -339,6 +397,36 @@ VOID DeallocSystemData(PSYSTEM_DATA systemData)
 	DeallocVmcsRegion(systemData->vmcsRegion);
 }
 
+VOID WvsrVmExitHandler(PREGS guestRegs)
+{
+	VM_EXIT_DATA exitReason = { 0 };
+	UINT64 exitQualification = 0;
+
+	__vmx_vmread(EXIT_REASON, &exitReason.flags);
+	__vmx_vmread(EXIT_QUALIFICATION, &exitQualification);
+
+	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF,
+		"[*] exit reason: %d, exit qualification: %d\n", exitReason.Bitfield.reason, exitQualification));
+
+	// Implement exit handlers for the different exit reasons as needed
+	switch (exitReason.Bitfield.reason)
+	{
+	case VM_EXIT_HLT:
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] Hit Halt VM Exit reason!\n"));
+		IncementIp();
+		KdBreakPoint();
+		break;
+	}
+	default:
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] Default Exit!\n"));
+		KdBreakPoint();
+		break;
+	}
+	}
+}
+
 NTSTATUS WvsrInitVm() 
 {
 	gSystemData = (PSYSTEM_DATA)ExAllocatePoolWithTag(NonPagedPool, CPU_COUNT * sizeof(SYSTEM_DATA), WVSR_TAG);
@@ -346,23 +434,23 @@ NTSTATUS WvsrInitVm()
 	{
 		return STATUS_UNSUCCESSFUL;
 	}
-	for (int i = 0; i < CPU_COUNT; i++)
+	for (int coreIndex = 0; coreIndex < CPU_COUNT; coreIndex++)
 	{
 		// Schedule the i-th logic processor
-		KeSetSystemAffinityThread(1 << i);
+		KeSetSystemAffinityThread(1 << coreIndex);
 
 		// Allocate and init VM resources
-		if (!(AllocSystemData(&gSystemData[i])))
+		if (!(AllocSystemData(&gSystemData[coreIndex])))
 		{
-			KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] Allocation failed for core %d\n", i));
+			KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] Allocation failed for core %d\n", coreIndex));
 			return STATUS_UNSUCCESSFUL;
 		}
-		if (!(VmxonOp(WvsrPaFromVa((&gSystemData[i])->vmxonRegion))))
+		if (!(VmxonOp(WvsrPaFromVa((&gSystemData[coreIndex])->vmxonRegion))))
 		{
-			KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmxon failed for core %d\n", i));
+			KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmxon failed for core %d\n", coreIndex));
 			return STATUS_UNSUCCESSFUL;
 		}
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] core %d running in vmx root\n", i));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] core %d running in vmx root\n", coreIndex));
 	}
 
 	return STATUS_SUCCESS;
@@ -388,17 +476,17 @@ VOID WvsrStartVm(UINT32 processorId, NTSTATUS* ntStatus)
 		return STATUS_UNSUCCESSFUL;
 	}
 
-	if (!SetupVmcs())
+	if (!SetupVmcs(&gSystemData[processorId]))
 	{
 		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmcs setup failed for core %d\n", processorId));
 		return STATUS_UNSUCCESSFUL;
 	}
 
 	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] Launching core %d\n", processorId));
-	__vmx_vmlaunch();
-		
+	status = __vmx_vmlaunch();
+
 	__vmx_vmread(VM_INSTRUCTION_ERROR, &status);
-	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] Error Launching core %d\n Error: %llx\n", processorId, status));
+	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] Error Launching core %d Error: %llx\n", processorId, status));
 
 	*ntStatus = STATUS_UNSUCCESSFUL;
 }

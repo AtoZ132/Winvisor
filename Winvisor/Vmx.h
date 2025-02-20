@@ -15,6 +15,8 @@
 #define CPU_COUNT 3
 #endif
 
+#define VMM_STACK_SIZE (3 * PAGE_SIZE)
+
 // Definitions of Primary Processor-Based VM-Execution Controls
 #define PIN_BASED_EXTERNAL_INTERRUPT_EXITING    (1U << 0)
 #define PIN_BASED_NMI_EXITING                   (1U << 3)
@@ -136,6 +138,7 @@ typedef struct _SYSTEM_DATA
 {
 	PVMCS_REGION vmxonRegion;
 	PVMCS_REGION vmcsRegion;
+	UINT64 vmmStack;
 	PEPTP eptp;
 } SYSTEM_DATA, *PSYSTEM_DATA;
 
@@ -152,6 +155,20 @@ typedef union _VMCS_COMP_ENCODING
 	} Bitfield;
 	UINT32 flags;
 } VMCS_COMP_ENCODING, *PVMCS_COMP_ENCODING;
+
+typedef union _VM_EXIT_DATA
+{
+	struct
+	{
+		UINT16 reason;
+		UINT32 reserved : 9;
+		UINT32 premBusyShadowStack : 1;
+		UINT32 vmmBusyLock : 1;
+		UINT32 enclaveMode : 1;
+		UINT32 reserved2 : 4;
+	} Bitfield;
+	UINT32 flags;
+}VM_EXIT_DATA, *PVM_EXIT_DATA;
 
 
 /*
@@ -472,8 +489,86 @@ typedef enum INVEPT_TYPE
 	GLOBAL_CONTEXT = 2
 };
 
+// Table C-1. Basic Exit Reasons
+typedef enum VM_EXIT_REASON
+{
+	VM_EXIT_EXCEPTION_OR_NMI				  = 0,
+	VM_EXIT_EXTERNAL_INTERRUPT				  = 1,
+	VM_EXIT_TRIPLE_FAULT					  = 2,
+	VM_EXIT_INIT_SIGNAL						  = 3,
+	VM_EXIT_SIPI							  = 4,
+	VM_EXIT_IO_SMI							  = 5,
+	VM_EXIT_OTHER_SMI						  = 6,
+	VM_EXIT_INTERRUPT_WINDOW				  = 7,
+	VM_EXIT_NMI_WINDOW						  = 8,
+	VM_EXIT_TASK_SWITCH						  = 9,
+	VM_EXIT_CPUID							  = 10,
+	VM_EXIT_GETSEC							  = 11,
+	VM_EXIT_HLT								  = 12,
+	VM_EXIT_INVD							  = 13,
+	VM_EXIT_INVLPG							  = 14,
+	VM_EXIT_RDPMC							  = 15,
+	VM_EXIT_RDTSC							  = 16,
+	VM_EXIT_RSM								  = 17,
+	VM_EXIT_VMCALL							  = 18,
+	VM_EXIT_VMCLEAR							  = 19,
+	VM_EXIT_VMLAUNCH						  = 20,
+	VM_EXIT_VMPTRLD							  = 21,
+	VM_EXIT_VMPTRST							  = 22,
+	VM_EXIT_VMREAD							  = 23,
+	VM_EXIT_VMRESUME						  = 24,
+	VM_EXIT_VMWRITE							  = 25,
+	VM_EXIT_VMXOFF							  = 26,
+	VM_EXIT_VMXON							  = 27,
+	VM_EXIT_CR_ACCESS						  = 28,
+	VM_EXIT_DR_ACCESS						  = 29,
+	VM_EXIT_IO_INSTRUCTION					  = 30,
+	VM_EXIT_MSR_READ						  = 31,
+	VM_EXIT_MSR_WRITE						  = 32,
+	VM_EXIT_VM_ENTRY_FAIL_INVALID_GUEST_STATE = 33,
+	VM_EXIT_VM_ENTRY_FAIL_MSR_LOADING		  = 34,
+	VM_EXIT_MWAIT							  = 36,
+	VM_EXIT_MONITOR_TRAP_FLAG				  = 37,
+	VM_EXIT_MONITOR							  = 39,
+	VM_EXIT_PAUSE							  = 40,
+	VM_EXIT_VM_ENTRY_FAIL_MACHINE_CHECK		  = 41,
+	VM_EXIT_TPR_BELOW_THRESHOLD				  = 43,
+	VM_EXIT_APIC_ACCESS						  = 44,
+	VM_EXIT_VIRTUALIZED_EOI					  = 45,
+	VM_EXIT_GDTR_IDTR_ACCESS				  = 46,
+	VM_EXIT_LDTR_TR_ACCESS					  = 47,
+	VM_EXIT_EPT_VIOLATION					  = 48,
+	VM_EXIT_EPT_MISCONFIGURATION			  = 49,
+	VM_EXIT_INVEPT							  = 50,
+	VM_EXIT_RDTSCP							  = 51,
+	VM_EXIT_VMX_TIMER_EXPIRED				  = 52,
+	VM_EXIT_INVVPID							  = 53,
+	VM_EXIT_WBINVD_WBNOINVD					  = 54,
+	VM_EXIT_XSETBV							  = 55,
+	VM_EXIT_APIC_WRITE						  = 56,
+	VM_EXIT_RDRAND							  = 57,
+	VM_EXIT_INVPCID							  = 58,
+	VM_EXIT_VMFUNC							  = 59,
+	VM_EXIT_ENCLS							  = 60,
+	VM_EXIT_RDSEED							  = 61,
+	VM_EXIT_PML_FULL						  = 62,
+	VM_EXIT_XSAVES							  = 63,
+	VM_EXIT_XRSTORS							  = 64,
+	VM_EXIT_PCONFIG							  = 65,
+	VM_EXIT_SPP_RELATED_EVENT				  = 66,
+	VM_EXIT_UMWAIT							  = 67,
+	VM_EXIT_TPAUSE							  = 68,
+	VM_EXIT_LOADIWKEY						  = 69,
+	VM_EXIT_ENCLV							  = 70,
+	VM_EXIT_ENQCMD_PASID_TRANSLATION_FAILURE  = 72,
+	VM_EXIT_ENQCMDS_PASID_TRANSLATION_FAILURE = 73,
+	VM_EXIT_BUS_LOCK						  = 74,
+	VM_EXIT_INSTRUCTION_TIMEOUT				  = 75,
+	VM_EXIT_SEAMCALL						  = 76,
+	VM_EXIT_TDCALL							  = 77
+};
 
-// externals
+
 extern void inline InveptOp(int inveptType, PVOID inveptDesc);
 extern UINT64 inline GetGDTBase();
 extern UINT16 inline GetGDTLimit();
@@ -488,6 +583,7 @@ extern UINT16 inline GetFS();
 extern UINT16 inline GetGS();
 extern UINT64 inline GetRflags();
 extern UINT64 inline GetLDTR();
+extern void VmExitHandler();
 
 
 NTSTATUS CheckVmxSupport();
@@ -496,14 +592,17 @@ BOOLEAN VmptrldOp(UINT64* vmcsPhysical);
 BOOLEAN VmclearOp(UINT64* vmcsPhysicalAddress);
 VOID VmxoffOp();
 VOID VmxInveptOp(int inveptType, EPTP eptp);
+VOID VmResumeErrorHandler();
+VOID IncementIp();
 BOOLEAN InitSegmentDescriptor(PUINT8 gdtBase, UINT16 segmentSelector, PSEGMENT_DESCRIPTOR segDesc);
 BOOLEAN SetupGuestSelectorFields(PUINT8 gdtBase, UINT16 segmentSelector, UINT16 segmentSelectorIndex);
 UINT32 AdjustVmcsControlField(UINT32 controls, ULONG msrAddr);
-BOOLEAN SetupVmcs();
+BOOLEAN SetupVmcs(PSYSTEM_DATA systemData);
 UINT64* InitVmcsRegion();
 VOID DeallocVmcsRegion(UINT64* vmcsRegionPhysical);
 BOOLEAN AllocSystemData(PSYSTEM_DATA systemData);
 VOID DeallocSystemData(PSYSTEM_DATA systemData);
+VOID WvsrVmExitHandler(PREGS guestRegs);
 NTSTATUS WvsrInitVm();
 VOID WvsrStartVm(UINT32 processorId, NTSTATUS* ntStatus);
 VOID WvsrStopVm();

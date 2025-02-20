@@ -56,8 +56,10 @@ PEPTP InitEpt()
 
 	RtlZeroMemory(epte, PAGE_SIZE);
 
-	// Alloc 2 pages to test stuff before actually implementing EPT as planned
-	UINT64 GuestTestPages = ExAllocatePoolWithTag(NonPagedPool, 2 * PAGE_SIZE, WVSR_TAG);
+	// Alloc a few pages to test stuff before actually implementing EPT as planned
+	const int numOfPages = 10;
+	UINT64 GuestTestPages = ExAllocatePoolWithTag(NonPagedPool, numOfPages * PAGE_SIZE, WVSR_TAG);
+
 	if (GuestTestPages == NULL)
 	{
 		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] epte allocation failed"));
@@ -69,8 +71,10 @@ PEPTP InitEpt()
 		return NULL;
 	}
 
-	RtlZeroMemory(GuestTestPages, 2 * PAGE_SIZE);
-	for (int i = 0; i < 2; i++)
+	RtlZeroMemory(GuestTestPages, numOfPages * PAGE_SIZE);
+	memset(GuestTestPages, 0xf4, numOfPages * PAGE_SIZE);
+	gGuestMappedArea = GuestTestPages;
+	for (int i = 0; i < numOfPages; i++)
 	{
 		epte[i].Bitfields.read = 1;
 		epte[i].Bitfields.write = 1;
