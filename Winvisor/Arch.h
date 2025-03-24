@@ -1,6 +1,11 @@
 #pragma once
 
 
+// CPUID related defines
+#define CPUID_INFO 0x1
+#define CPUID_HV_ID 0x40000001
+#define CPUID_HV_PRESENT_BIT (1 << 31)
+
 // MSR addresses
 #define IA32_FEATURE_CONTROL 0x3A
 #define IA32_FEATURE_CONTROL_LOCK_BIT 0x1

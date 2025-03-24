@@ -141,7 +141,7 @@ VOID VmResumeErrorHandler()
 	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmresume failed, error code: %d\n", errorCode));
 }
 
-VOID IncementIp()
+VOID IncrementIp()
 {
 	UINT64 guestRip = 0;
 	UINT32 instructionLen = 0;
@@ -149,6 +149,29 @@ VOID IncementIp()
 	__vmx_vmread(VM_EXIT_INSTRUCTION_LENGTH, &instructionLen);
 
 	__vmx_vmwrite(GUEST_RIP, guestRip + instructionLen);
+}
+
+VOID VmExitCpuidHandler(PREGS regs)
+{
+	INT32 cpuInfo[4] = { 0 };
+	INT32 functionId = 0;
+	INT32 subfunctionId = 0;
+
+	__cpuidex(cpuInfo, functionId, subfunctionId);
+
+	if (functionId == CPUID_INFO)
+	{
+		cpuInfo[2] |= CPUID_HV_PRESENT_BIT;
+	}
+	else if(functionId == CPUID_HV_ID)
+	{
+		cpuInfo[0] = WVSR_TAG;
+	}
+
+	regs->rax = cpuInfo[0];
+	regs->rbx = cpuInfo[1];
+	regs->rcx = cpuInfo[2];
+	regs->rdx = cpuInfo[3];
 }
 
 BOOLEAN InitSegmentDescriptor(PUINT8 gdtBase, UINT16 segmentSelector, PSEGMENT_DESCRIPTOR segDesc)
@@ -253,10 +276,11 @@ BOOLEAN SetupVmcs(PSYSTEM_DATA systemData)
 
 	// Setup VM-Execution Controls
 	__vmx_vmwrite(PRIMARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS,
-		AdjustVmcsControlField(VMX_PRIMARY_BASED_HLT_EXITING | VMX_PRIMARY_BASED_ACTIVATE_SECONDARY_CONTROLS,
+		AdjustVmcsControlField(VMX_PRIMARY_BASED_HLT_EXITING | VMX_PRIMARY_BASED_ACTIVATE_SECONDARY_CONTROLS | VMX_PRIMARY_BASED_USE_MSR_BITMAPS,
 			IA32_VMX_PROCBASED_CTLS));
 	__vmx_vmwrite(SECONDARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS,
-		AdjustVmcsControlField(VMX_SECONDARY_BASED_ENABLE_RDTSCP, IA32_VMX_PROCBASED_CTLS2));
+		AdjustVmcsControlField(VMX_SECONDARY_BASED_ENABLE_RDTSCP | VMX_SECONDARY_BASED_ENABLE_XSAVES_XRSTORS | VMX_SECONDARY_BASED_ENABLE_INVPCID,
+			IA32_VMX_PROCBASED_CTLS2));
 	__vmx_vmwrite(PIN_BASED_VM_EXECUTION_CONTROLS,
 		AdjustVmcsControlField(0, IA32_VMX_PINBASED_CTLS));
 	__vmx_vmwrite(PRIMARY_VM_EXIT_CONTROLS,
@@ -265,10 +289,6 @@ BOOLEAN SetupVmcs(PSYSTEM_DATA systemData)
 		AdjustVmcsControlField(VMX_ENTRY_IA32E_MODE_GUEST, IA32_VMX_ENTRY_CTLS));
 
 	__vmx_vmwrite(CR3_TARGET_COUNT, 0);
-	__vmx_vmwrite(CR3_TARGET_VALUE_0, 0);
-	__vmx_vmwrite(CR3_TARGET_VALUE_1, 0);
-	__vmx_vmwrite(CR3_TARGET_VALUE_2, 0);
-	__vmx_vmwrite(CR3_TARGET_VALUE_3, 0);
 
 	__vmx_vmwrite(VM_ENTRY_MSR_LOAD_COUNT, 0);
 	__vmx_vmwrite(VM_ENTRY_INTERRUPTION_INFO_FIELD, 0);
@@ -401,6 +421,12 @@ VOID WvsrVmExitHandler(PREGS guestRegs)
 {
 	VM_EXIT_DATA exitReason = { 0 };
 	UINT64 exitQualification = 0;
+	KIRQL savedIrql = KeGetCurrentIrql();
+
+	if (savedIrql < DISPATCH_LEVEL)
+	{
+		KeRaiseIrqlToDpcLevel();
+	}
 
 	__vmx_vmread(EXIT_REASON, &exitReason.flags);
 	__vmx_vmread(EXIT_QUALIFICATION, &exitQualification);
@@ -411,11 +437,20 @@ VOID WvsrVmExitHandler(PREGS guestRegs)
 	// Implement exit handlers for the different exit reasons as needed
 	switch (exitReason.Bitfield.reason)
 	{
+	case VM_EXIT_CPUID:
+	{
+		VmExitCpuidHandler(guestRegs);
+		IncrementIp();
+
+		break;
+	}
+
 	case VM_EXIT_HLT:
 	{
 		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] Hit Halt VM Exit reason!\n"));
-		IncementIp();
+		IncrementIp();
 		KdBreakPoint();
+		
 		break;
 	}
 	default:
@@ -424,6 +459,11 @@ VOID WvsrVmExitHandler(PREGS guestRegs)
 		KdBreakPoint();
 		break;
 	}
+	}
+
+	if (savedIrql < DISPATCH_LEVEL)
+	{
+		KeLowerIrql(savedIrql);
 	}
 }
 
