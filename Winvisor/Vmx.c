@@ -154,16 +154,14 @@ VOID IncrementIp()
 VOID VmExitCpuidHandler(PREGS regs)
 {
 	INT32 cpuInfo[4] = { 0 };
-	INT32 functionId = 0;
-	INT32 subfunctionId = 0;
 
-	__cpuidex(cpuInfo, functionId, subfunctionId);
+	__cpuidex(cpuInfo, (INT32)regs->rax, (INT32)regs->rcx);
 
-	if (functionId == CPUID_INFO)
+	if (regs->rax == CPUID_INFO)
 	{
 		cpuInfo[2] |= CPUID_HV_PRESENT_BIT;
 	}
-	else if(functionId == CPUID_HV_ID)
+	else if(regs->rax == CPUID_HV_ID)
 	{
 		cpuInfo[0] = WVSR_TAG;
 	}
@@ -172,6 +170,98 @@ VOID VmExitCpuidHandler(PREGS regs)
 	regs->rbx = cpuInfo[1];
 	regs->rcx = cpuInfo[2];
 	regs->rdx = cpuInfo[3];
+}
+
+VOID VmExitCrAccessHandler(PREGS regs)
+{
+	UINT64 exitQualification = 0;
+	MOV_CR_ACCESS_QUAL crAccessQual = { 0 };
+	PUINT64 pReg = (PUINT64)&regs->rax + crAccessQual.Bitfield.gpReg;
+
+	__vmx_vmread(EXIT_QUALIFICATION, &exitQualification);
+	crAccessQual.flags = exitQualification;
+
+	switch (crAccessQual.Bitfield.accessType)
+	{
+	case MOV_TO_CR:
+	{
+		switch (crAccessQual.Bitfield.crNumber)
+		{
+		case 0:
+		{
+			UINT64 newCr0 = *pReg;
+			newCr0 &= __readmsr(IA32_VMX_CR0_FIXED1);
+			newCr0 |= __readmsr(IA32_VMX_CR0_FIXED0);
+			__vmx_vmwrite(GUEST_CR0, newCr0);
+			__vmx_vmwrite(CR0_READ_SHADOW, newCr0);
+			
+			break;
+		}
+		case 4:
+		{
+			UINT64 newCr4 = *pReg;
+			newCr4 &= __readmsr(IA32_VMX_CR4_FIXED1);
+			newCr4 |= __readmsr(IA32_VMX_CR4_FIXED0);
+			__vmx_vmwrite(GUEST_CR4, newCr4);
+			__vmx_vmwrite(CR4_READ_SHADOW, newCr4);
+			
+			break;
+		}
+		case 3:
+		{
+			// Need to Add TLB invalidation
+			__vmx_vmwrite(GUEST_CR3, *pReg & ~(1ULL << 63));
+			
+			break;
+		}
+		default:
+			KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] unimplemented mov-to-cr case!\n"));
+			KdBreakPoint();
+			
+			break;
+		}
+		
+		break;
+	}
+	case MOV_FROM_CR:
+	{
+		switch (crAccessQual.Bitfield.crNumber)
+		{
+		case 0:
+		{
+			__vmx_vmread(GUEST_CR0, pReg);
+			
+			break;
+		}
+		case 3:
+		{
+			__vmx_vmread(GUEST_CR3, pReg);
+			
+			break;
+		}
+		case 4:
+		{
+			__vmx_vmread(GUEST_CR4, pReg);
+			
+			break;
+		}
+		default:
+			KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] unimplemented mov-from-cr case!\n"));
+			KdBreakPoint();
+		
+			break;
+		}
+		
+		break;
+	}
+	default:
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] unimplemented!\n"));
+		KdBreakPoint();
+
+		break;
+	}
+	}
 }
 
 BOOLEAN InitSegmentDescriptor(PUINT8 gdtBase, UINT16 segmentSelector, PSEGMENT_DESCRIPTOR segDesc)
@@ -444,7 +534,12 @@ VOID WvsrVmExitHandler(PREGS guestRegs)
 
 		break;
 	}
+	case VM_EXIT_CR_ACCESS:
+	{
+		VmExitCrAccessHandler(guestRegs);
 
+		break;
+	}
 	case VM_EXIT_HLT:
 	{
 		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] Hit Halt VM Exit reason!\n"));

@@ -117,6 +117,30 @@
 #define VMX_ENTRY_LOAD_GUEST_IA32_LBR_CTL           (1 << 21)
 #define VMX_ENTRY_LOAD_PKRS                         (1 << 22)
 
+// CR access vm-exit qualification defines
+#define MOV_TO_CR			0
+#define MOV_FROM_CR			1
+#define CTLS				2
+#define LMSW				3
+#define LMSW_REG_OPERAND	0
+#define LMSW_MEMORY_OPERAND 1
+#define MOV_CR_RAX			0
+#define MOV_CR_RCX			1
+#define MOV_CR_RDX			2
+#define MOV_CR_RBX			3
+#define MOV_CR_RSP			4
+#define MOV_CR_RBP			5
+#define MOV_CR_RSI			6
+#define MOV_CR_RDI			7
+#define MOV_CR_R8			8
+#define MOV_CR_R9			9
+#define MOV_CR_R10			10
+#define MOV_CR_R11			11
+#define MOV_CR_R12			12
+#define MOV_CR_R13			13
+#define MOV_CR_R14			14
+#define MOV_CR_R15			15
+
 
 /*
 * vmcs_revision_id - 
@@ -169,6 +193,22 @@ typedef union _VM_EXIT_DATA
 	} Bitfield;
 	UINT32 flags;
 }VM_EXIT_DATA, *PVM_EXIT_DATA;
+
+typedef union _MOV_CR_ACCESS_QUAL
+{
+	struct
+	{
+		UINT8 crNumber : 4;
+		UINT8 accessType : 2;
+		UINT8 lmswOpType : 1;
+		UINT8 unused : 1;
+		UINT8 gpReg : 4;
+		UINT8 unused2 : 4;
+		UINT16 sourceData : 16; // For LMSW, the LMSW source data. For CLTS and MOV CR, cleared to 0
+		UINT32 unused3 : 32; // These bits exist only on processors that support Intel 64 architecture.
+	}Bitfield;
+	UINT64 flags;
+}MOV_CR_ACCESS_QUAL, *PMOV_CR_ACCESS_QUAL;
 
 
 /*
@@ -595,6 +635,7 @@ VOID VmxInveptOp(int inveptType, EPTP eptp);
 VOID VmResumeErrorHandler();
 VOID IncrementIp();
 VOID VmExitCpuidHandler(PREGS regs);
+VOID VmExitCrAccessHandler(PREGS regs);
 BOOLEAN InitSegmentDescriptor(PUINT8 gdtBase, UINT16 segmentSelector, PSEGMENT_DESCRIPTOR segDesc);
 BOOLEAN SetupGuestSelectorFields(PUINT8 gdtBase, UINT16 segmentSelector, UINT16 segmentSelectorIndex);
 UINT32 AdjustVmcsControlField(UINT32 controls, ULONG msrAddr);
