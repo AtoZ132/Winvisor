@@ -8,7 +8,7 @@ PEPTP InitEpt()
 	PEPTP eptp = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, WVSR_TAG);
 	if (eptp == NULL)
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] eptp allocation failed"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] eptp allocation failed"));
 		return NULL;
 	}
 
@@ -16,7 +16,7 @@ PEPTP InitEpt()
 	PEPT_PML4E epml4e = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, WVSR_TAG);
 	if (epml4e == NULL)
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] epml4e allocation failed"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] epml4e allocation failed"));
 		ExFreePool(eptp);
 		return NULL;
 	}
@@ -25,7 +25,7 @@ PEPTP InitEpt()
 	PEPT_PDPTE epdpte = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, WVSR_TAG);
 	if (epdpte == NULL)
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] epdpte allocation failed"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] epdpte allocation failed"));
 		ExFreePool(epml4e);
 		ExFreePool(eptp);
 		return NULL;
@@ -35,7 +35,7 @@ PEPTP InitEpt()
 	PEPT_PDE epde = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, WVSR_TAG);
 	if (epde == NULL)
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] epde allocation failed"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] epde allocation failed"));
 		ExFreePool(epdpte);
 		ExFreePool(epml4e);
 		ExFreePool(eptp);
@@ -46,7 +46,7 @@ PEPTP InitEpt()
 	PEPT_PTE epte = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, WVSR_TAG);
 	if (epte == NULL)
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] epte allocation failed"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] epte allocation failed"));
 		ExFreePool(epde);
 		ExFreePool(epdpte);
 		ExFreePool(epml4e);
@@ -62,7 +62,7 @@ PEPTP InitEpt()
 
 	if (GuestTestPages == NULL)
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] epte allocation failed"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] epte allocation failed"));
 		ExFreePool(epte);
 		ExFreePool(epde);
 		ExFreePool(epdpte);

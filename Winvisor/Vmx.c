@@ -1,6 +1,6 @@
 #include "Vmx.h"
 
-// Globals
+
 PSYSTEM_DATA gSystemData;
 UINT64 gGuestMappedArea;
 
@@ -22,7 +22,7 @@ NTSTATUS CheckVmxSupport()
 
 	if (!(RtlEqualString(&vendorString, &targetVendorString, FALSE)))
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] unsupported vendor\n"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] unsupported vendor\n"));
 		return STATUS_NOT_SUPPORTED;
 	}
 	
@@ -30,27 +30,26 @@ NTSTATUS CheckVmxSupport()
 	__cpuid(cpuInfo, 1);
 	if (cpuInfo[2] & 0x20 == 0) 
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmx is unsupported\n"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] vmx is unsupported\n"));
 		return STATUS_NOT_SUPPORTED;
 	}
-	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] vmx is supported\n"));
+	KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "[*] vmx is supported\n"));
 
 	// Check IA32_FEATURE_CONTROL msr lock bit 0 and bit 2 for vmxon support outside SMX
 	ULONGLONG ia32_feature_control = __readmsr(IA32_FEATURE_CONTROL);
 	if (!(ia32_feature_control & IA32_FEATURE_CONTROL_LOCK_BIT))
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] IA32_FEATURE_CONTROL lock bit 0 is not set!\n"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] IA32_FEATURE_CONTROL lock bit 0 is not set!\n"));
 		return STATUS_NOT_SUPPORTED;
 	}
 	
 	// Check bit 2
 	if (!(ia32_feature_control & IA32_FEATURE_CONTROL_VMXON_OUTSIDE_SMX))
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] IA32_FEATURE_CONTROL vmxon outside smx bit 2 is not set!\n"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] IA32_FEATURE_CONTROL vmxon outside smx bit 2 is not set!\n"));
 		return STATUS_NOT_SUPPORTED;
 	}
-	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] IA32_FEATURE_CONTROL is all set\n"));
-
+	KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "[*] IA32_FEATURE_CONTROL is all set\n"));
 
 	return STATUS_SUCCESS;
 }
@@ -68,7 +67,7 @@ BOOLEAN VmxonOp(UINT64* vmxonRegionPhysical)
 	int status = __vmx_on(&vmxonRegionPhysical);
 	if (status)
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmxon failed with status: %d\n", status));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] vmxon failed with status: %d\n", status));
 		return FALSE;
 	}
 
@@ -80,7 +79,7 @@ BOOLEAN VmptrldOp(UINT64* vmcsPhysicalAddress)
 	int status = __vmx_vmptrld(&vmcsPhysicalAddress);
 	if (status)
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmptrld failed with status: %d\n", status));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] vmptrld failed with status: %d\n", status));
 		return FALSE;
 	}
 	
@@ -92,7 +91,7 @@ BOOLEAN VmclearOp(UINT64* vmcsPhysicalAddress)
 	int status = __vmx_vmclear(&vmcsPhysicalAddress);
 	if (status)
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmclear failed with status: %d\n", status));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] vmclear failed with status: %d\n", status));
 		return FALSE;
 	}
 
@@ -138,7 +137,7 @@ VOID VmResumeErrorHandler()
 {
 	int errorCode = 0;
 	__vmx_vmread(VM_INSTRUCTION_ERROR, &errorCode);
-	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmresume failed, error code: %d\n", errorCode));
+	KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] vmresume failed, error code: %d\n", errorCode));
 }
 
 VOID IncrementIp()
@@ -194,7 +193,6 @@ VOID VmExitCrAccessHandler(PREGS regs)
 			newCr0 |= __readmsr(IA32_VMX_CR0_FIXED0);
 			__vmx_vmwrite(GUEST_CR0, newCr0);
 			__vmx_vmwrite(CR0_READ_SHADOW, newCr0);
-			
 			break;
 		}
 		case 4:
@@ -204,23 +202,19 @@ VOID VmExitCrAccessHandler(PREGS regs)
 			newCr4 |= __readmsr(IA32_VMX_CR4_FIXED0);
 			__vmx_vmwrite(GUEST_CR4, newCr4);
 			__vmx_vmwrite(CR4_READ_SHADOW, newCr4);
-			
 			break;
 		}
 		case 3:
 		{
 			// Need to Add TLB invalidation
 			__vmx_vmwrite(GUEST_CR3, *pReg & ~(1ULL << 63));
-			
 			break;
 		}
 		default:
-			KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] unimplemented mov-to-cr case!\n"));
+			KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] unimplemented mov-to-cr case!\n"));
 			KdBreakPoint();
-			
 			break;
 		}
-		
 		break;
 	}
 	case MOV_FROM_CR:
@@ -230,38 +224,92 @@ VOID VmExitCrAccessHandler(PREGS regs)
 		case 0:
 		{
 			__vmx_vmread(GUEST_CR0, pReg);
-			
 			break;
 		}
 		case 3:
 		{
 			__vmx_vmread(GUEST_CR3, pReg);
-			
 			break;
 		}
 		case 4:
 		{
 			__vmx_vmread(GUEST_CR4, pReg);
-			
 			break;
 		}
 		default:
-			KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] unimplemented mov-from-cr case!\n"));
+			KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] unimplemented mov-from-cr case!\n"));
 			KdBreakPoint();
-		
 			break;
 		}
-		
 		break;
 	}
 	default:
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] unimplemented!\n"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] unimplemented!\n"));
 		KdBreakPoint();
-
 		break;
 	}
 	}
+}
+
+VOID VmExitMsrReadHandler(PREGS regs)
+{
+	MSR msr = { 0 };
+
+	if ((regs->rcx > 0 && regs->rcx < 0x00001FFF) ||
+		(regs->rcx > 0xC0000000 && regs->rcx < 0xC0001FFF))
+	{
+		msr.flags = __readmsr(regs->rcx);
+		regs->rax = msr.Fields.low;
+		regs->rdx = msr.Fields.high;
+	}
+}
+
+VOID VmExitMsrWriteHandler(PREGS regs)
+{
+	MSR msr = { 0 };
+
+	if ((regs->rcx > 0 && regs->rcx < 0x00001FFF) ||
+		(regs->rcx > 0xC0000000 && regs->rcx < 0xC0001FFF))
+	{
+		msr.Fields.low = regs->rax;
+		msr.Fields.high = regs->rdx;
+		__writemsr(regs->rcx, msr.flags);
+	}
+}
+
+VOID VmExitVmxHandler(PREGS regs) 
+{
+	UINT64 rflags = 0;
+	
+	__vmx_vmread(GUEST_RFLAGS, &rflags);
+	__vmx_vmwrite(GUEST_RFLAGS, rflags | 0x1); // cf = 1. As per Chapter 31.2 for the VMfailInvalid case.
+}
+
+VOID SetupMsrBitmap(UINT64 msrBitmap)
+{
+	RTL_BITMAP readMsrLowBitmap = { 0 };
+	RTL_BITMAP readMsrHighBitmap = { 0 };
+	RTL_BITMAP writeMsrLowBitmap = { 0 };
+	RTL_BITMAP writeMsrHighBitmap = { 0 };
+	
+	UINT8* readMsrLow = (UINT8*)msrBitmap;
+	UINT8* readMsrHigh = readMsrLow + 1024;
+	UINT8* writeMsrLow = readMsrLow + 2048;
+	UINT8* writeMsrHigh = readMsrLow + 3072;
+
+	RtlInitializeBitMap(&readMsrLowBitmap, readMsrLow, 1024);
+	RtlInitializeBitMap(&readMsrHighBitmap, readMsrHigh, 1024);
+	RtlInitializeBitMap(&writeMsrLowBitmap, writeMsrLow, 1024);
+	RtlInitializeBitMap(&writeMsrHighBitmap, writeMsrHigh, 1024);
+
+	// For now clear the bitmap so no readmsr/writemsr triggers a vmexit
+	// Fill with 0xff to set vm-exit for all read/write msrs or 
+	// RtlSetBit / RtlClearBit for specific bits
+	RtlFillMemory(readMsrLow, 1024, 0);
+	RtlFillMemory(readMsrHigh, 1024, 0);
+	RtlFillMemory(writeMsrLow, 1024, 0);
+	RtlFillMemory(writeMsrHigh, 1024, 0);
 }
 
 BOOLEAN InitSegmentDescriptor(PUINT8 gdtBase, UINT16 segmentSelector, PSEGMENT_DESCRIPTOR segDesc)
@@ -307,7 +355,7 @@ BOOLEAN SetupGuestSelectorFields(PUINT8 gdtBase, UINT16 segmentSelectorIndex, UI
 		accessRights |= 0x10000;
 	}
 
-	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF,
+	KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL,
 		"[*] segDesc: index: %d, segDesc.Limit: %x, accessRights: %x, segDesc.baseAddr: %llx\n", 
 		segmentSelectorIndex, segDesc.segLimit, accessRights, segDesc.baseAddr));
 	__vmx_vmwrite(GUEST_ES_LIMIT + segmentSelectorIndex * 2, segDesc.segLimit);
@@ -424,7 +472,7 @@ BOOLEAN SetupVmcs(PSYSTEM_DATA systemData)
 	__vmx_vmwrite(HOST_IA32_SYSENTER_EIP, __readmsr(IA32_SYSENTER_EIP));
 	__vmx_vmwrite(HOST_IA32_SYSENTER_ESP, __readmsr(IA32_SYSENTER_ESP));
 
-
+	__vmx_vmwrite(ADDR_OF_MSR_BITMAPS_FULL, WvsrPaFromVa(systemData->msrBitmap));
 	__vmx_vmwrite(GUEST_RIP, gGuestMappedArea);
 	__vmx_vmwrite(GUEST_RSP, gGuestMappedArea);
 
@@ -449,12 +497,12 @@ UINT64* InitVmcsRegion()
 	pVmcsRegion = (PVMCS_REGION)MmAllocateContiguousMemory(sizeof(VMCS_REGION), maxPhysicalAddress);
 	if (!pVmcsRegion) 
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] Failed to allocate vmcs region\n"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] Failed to allocate vmcs region\n"));
 		return NULL;
 	}
 	RtlZeroMemory(pVmcsRegion, sizeof(VMCS_REGION));
 	pVmcsRegion->vmcsRevisionId = (UINT32)vmxBasicMsr.Bitfield.revisionId;
-	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF,
+	KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL,
 		"[*] vmcs region initialized, addr: %p, revision: %d\n", pVmcsRegion, pVmcsRegion->vmcsRevisionId));
 
 	return pVmcsRegion;
@@ -470,14 +518,15 @@ BOOLEAN AllocSystemData(PSYSTEM_DATA systemData)
 	systemData->vmxonRegion = InitVmcsRegion();
 	if (!(systemData->vmxonRegion))
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmxon region init failed\n"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] vmxon region init failed\n"));
 		return FALSE;
 	}
 
 	systemData->vmcsRegion = InitVmcsRegion();
 	if (!(systemData->vmcsRegion))
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmcs region init failed\n"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] vmcs region init failed\n"));
+		DeallocVmcsRegion(systemData->vmxonRegion);
 		return FALSE;
 	}
 	
@@ -485,18 +534,35 @@ BOOLEAN AllocSystemData(PSYSTEM_DATA systemData)
 	systemData->vmmStack = ExAllocatePoolWithTag(NonPagedPool, VMM_STACK_SIZE, WVSR_TAG);
 	if (!systemData->vmmStack)
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] Failed to allocate vmmStack\n"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] Failed to allocate vmmStack\n"));
+		DeallocVmcsRegion(systemData->vmxonRegion);
+		DeallocVmcsRegion(systemData->vmcsRegion);
 		return FALSE;
 	}
+
+	systemData->msrBitmap = ExAllocatePoolZero(NonPagedPool, PAGE_SIZE, WVSR_TAG);
+	if (!(systemData->msrBitmap))
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] Failed to allocate msr bitmap\n"));
+		DeallocVmcsRegion(systemData->vmxonRegion);
+		DeallocVmcsRegion(systemData->vmcsRegion);
+		ExFreePoolWithTag(systemData->vmmStack, WVSR_TAG);
+		return FALSE;
+	}
+	SetupMsrBitmap(systemData->msrBitmap);
 
 	systemData->eptp = InitEpt();
 	if (!(systemData->eptp))
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] ept init failed\n"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] ept init failed\n"));
+		DeallocVmcsRegion(systemData->vmxonRegion);
+		DeallocVmcsRegion(systemData->vmcsRegion);
+		ExFreePoolWithTag(systemData->vmmStack, WVSR_TAG);
+		ExFreePoolWithTag(systemData->msrBitmap, WVSR_TAG);
 		return FALSE;
 	}
 
-	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] SystemData initialized, addr: %p\n", systemData));
+	KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "[*] SystemData initialized, addr: %p\n", systemData));
 
 	return TRUE;
 }
@@ -505,6 +571,8 @@ VOID DeallocSystemData(PSYSTEM_DATA systemData)
 {
 	DeallocVmcsRegion(systemData->vmxonRegion);
 	DeallocVmcsRegion(systemData->vmcsRegion);
+	ExFreePoolWithTag(systemData->vmmStack, WVSR_TAG);
+	ExFreePoolWithTag(systemData->msrBitmap, WVSR_TAG);
 }
 
 VOID WvsrVmExitHandler(PREGS guestRegs)
@@ -521,36 +589,62 @@ VOID WvsrVmExitHandler(PREGS guestRegs)
 	__vmx_vmread(EXIT_REASON, &exitReason.flags);
 	__vmx_vmread(EXIT_QUALIFICATION, &exitQualification);
 
-	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF,
+	KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL,
 		"[*] exit reason: %d, exit qualification: %d\n", exitReason.Bitfield.reason, exitQualification));
 
 	// Implement exit handlers for the different exit reasons as needed
 	switch (exitReason.Bitfield.reason)
 	{
+	case VM_EXIT_INVEPT:
+	case VM_EXIT_INVVPID:
+	case VM_EXIT_VMCLEAR:
+	case VM_EXIT_VMLAUNCH:
+	case VM_EXIT_VMPTRLD:
+	case VM_EXIT_VMPTRST:
+	case VM_EXIT_VMRESUME:
+	case VM_EXIT_VMXOFF:
+	case VM_EXIT_VMXON:
+	case VM_EXIT_VMREAD:
+	case VM_EXIT_VMWRITE:
+	{
+		VmExitVmxHandler(guestRegs);
+		IncrementIp();
+		break;
+	}
+	case VM_EXIT_MSR_READ:
+	{
+		VmExitMsrReadHandler(guestRegs);
+		IncrementIp();
+		break;
+	}
+	case VM_EXIT_MSR_WRITE:
+	{
+		VmExitMsrWriteHandler(guestRegs);
+		IncrementIp();
+		break;
+	}
 	case VM_EXIT_CPUID:
 	{
 		VmExitCpuidHandler(guestRegs);
 		IncrementIp();
-
 		break;
 	}
 	case VM_EXIT_CR_ACCESS:
 	{
 		VmExitCrAccessHandler(guestRegs);
-
+		IncrementIp();
 		break;
 	}
 	case VM_EXIT_HLT:
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] Hit Halt VM Exit reason!\n"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "[*] Hit Halt VM Exit reason!\n"));
 		IncrementIp();
 		KdBreakPoint();
-		
 		break;
 	}
 	default:
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] Default Exit!\n"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] Default Exit!\n"));
 		KdBreakPoint();
 		break;
 	}
@@ -577,15 +671,15 @@ NTSTATUS WvsrInitVm()
 		// Allocate and init VM resources
 		if (!(AllocSystemData(&gSystemData[coreIndex])))
 		{
-			KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] Allocation failed for core %d\n", coreIndex));
+			KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] Allocation failed for core %d\n", coreIndex));
 			return STATUS_UNSUCCESSFUL;
 		}
 		if (!(VmxonOp(WvsrPaFromVa((&gSystemData[coreIndex])->vmxonRegion))))
 		{
-			KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmxon failed for core %d\n", coreIndex));
+			KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] vmxon failed for core %d\n", coreIndex));
 			return STATUS_UNSUCCESSFUL;
 		}
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] core %d running in vmx root\n", coreIndex));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "[*] core %d running in vmx root\n", coreIndex));
 	}
 
 	return STATUS_SUCCESS;
@@ -600,28 +694,28 @@ VOID WvsrStartVm(UINT32 processorId, NTSTATUS* ntStatus)
 	// Enter "Inactive, Not Current, Clear" state (see Intel SDM Sep.2023 Figure 25-1)
 	if (!(VmclearOp(WvsrPaFromVa((&gSystemData[processorId])->vmcsRegion))))
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmclear failed for core %d\n", processorId));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] vmclear failed for core %d\n", processorId));
 		return STATUS_UNSUCCESSFUL;
 	}
 
 	// Enter "Active, Current, Clear" state (see Intel SD Sep.2023 Figure 25-1)
 	if (!(VmptrldOp(WvsrPaFromVa((&gSystemData[processorId])->vmcsRegion))))
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmptrld failed for core %d\n", processorId));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] vmptrld failed for core %d\n", processorId));
 		return STATUS_UNSUCCESSFUL;
 	}
 
 	if (!SetupVmcs(&gSystemData[processorId]))
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] vmcs setup failed for core %d\n", processorId));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] vmcs setup failed for core %d\n", processorId));
 		return STATUS_UNSUCCESSFUL;
 	}
 
-	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] Launching core %d\n", processorId));
+	KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "[*] Launching core %d\n", processorId));
 	status = __vmx_vmlaunch();
 
 	__vmx_vmread(VM_INSTRUCTION_ERROR, &status);
-	KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[-] Error Launching core %d Error: %llx\n", processorId, status));
+	KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] Error Launching core %d Error: %llx\n", processorId, status));
 
 	*ntStatus = STATUS_UNSUCCESSFUL;
 }
@@ -634,7 +728,7 @@ VOID WvsrStopVm()
 		KeSetSystemAffinityThread(1 << i); 
 		VmxoffOp();
 		DeallocSystemData(&gSystemData[i]);
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, 0xFFFFFFFF, "[*] Stopping core %d\n", i));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "[*] Stopping core %d\n", i));
 	}
 	ExFreePool(gSystemData);
 }

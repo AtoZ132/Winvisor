@@ -163,6 +163,7 @@ typedef struct _SYSTEM_DATA
 	PVMCS_REGION vmxonRegion;
 	PVMCS_REGION vmcsRegion;
 	UINT64 vmmStack;
+	UINT64 msrBitmap;
 	PEPTP eptp;
 } SYSTEM_DATA, *PSYSTEM_DATA;
 
@@ -636,6 +637,10 @@ VOID VmResumeErrorHandler();
 VOID IncrementIp();
 VOID VmExitCpuidHandler(PREGS regs);
 VOID VmExitCrAccessHandler(PREGS regs);
+VOID VmExitMsrReadHandler(PREGS regs);
+VOID VmExitMsrWriteHandler(PREGS regs);
+VOID VmExitVmxHandler(PREGS regs);
+VOID SetupMsrBitmap(UINT64 msrBitmap);
 BOOLEAN InitSegmentDescriptor(PUINT8 gdtBase, UINT16 segmentSelector, PSEGMENT_DESCRIPTOR segDesc);
 BOOLEAN SetupGuestSelectorFields(PUINT8 gdtBase, UINT16 segmentSelector, UINT16 segmentSelectorIndex);
 UINT32 AdjustVmcsControlField(UINT32 controls, ULONG msrAddr);
