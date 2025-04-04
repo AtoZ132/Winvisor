@@ -1,5 +1,7 @@
 #pragma once
 #include <ntddk.h>
+#include <intrin.h>
+#include "Arch.h"
 #include "WinvisorUtil.h"
 
 
@@ -8,6 +10,13 @@
 */
 #define TABLE_SIZE 512
 
+// Memory Types
+#define MEMORY_TYPE_UNCACHEABLE     0x0
+#define MEMORY_TYPE_WRITE_COMBINING 0x1
+#define MEMORY_TYPE_WRITE_THROUGH   0x4
+#define MEMORY_TYPE_WRITE_PROTECTED 0x5
+#define MEMORY_TYPE_WRITE_BACK      0x6
+#define MEMORY_TYPE_INVALID         0xFF
 
 typedef union _EPTP
 {
@@ -23,6 +32,20 @@ typedef union _EPTP
 	} Bitfields;
 	UINT64 flags;
 } EPTP, *PEPTP;
+
+typedef struct _MTRR_RANGE_DESCRIPTOR
+{
+	UINT64 physicalBaseAddress;
+	UINT64 physicalEndAddress;
+	UINT8 memoryType;
+} MTRR_RANGE_DESCRIPTOR, *PMTRR_RANGE_DESCRIPTOR;
+
+typedef struct _EPT_STATE
+{
+	MTRR_RANGE_DESCRIPTOR mtrrRangeDesc[9];
+	UINT32 numberOfEnabledMemoryRanges;
+	PEPTP eptp;
+} EPT_STATE, *PEPT_STATE;
 
 // EPT PML4 Entry (PML4E) that References an EPT Page-Directory-Pointer Table
 typedef union _EPT_PML4E
@@ -192,4 +215,6 @@ typedef enum CACHE_TYPE
 extern UINT64 gGuestMappedArea;
 
 
+NTSTATUS CheckEptFeatures();
+VOID BuildMtrrMap(PEPT_STATE eptState);
 PEPTP InitEpt();

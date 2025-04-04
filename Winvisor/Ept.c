@@ -1,6 +1,60 @@
 #include "Ept.h"
 
 
+NTSTATUS CheckEptFeatures()
+{
+	IA32_MTRR_DEF_TYPE_MSR mtrrDefType = { 0 };
+
+	mtrrDefType.flags = __readmsr(IA32_MTRR_DEF_TYPE);
+
+	if (!mtrrDefType.Bitfield.mtrrEnable)
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] mtrr dynamic ranges feature not supported"));
+		return STATUS_NOT_SUPPORTED;
+	}
+
+	return STATUS_SUCCESS;
+}
+
+
+VOID BuildMtrrMap(PEPT_STATE eptState)
+{
+	IA32_MTRRCAP_MSR mtrrCap = { 0 };
+	IA32_MTRR_PHYSBASE_MSR currentPhysBase = { 0 };
+	IA32_MTRR_PHYSMASK_MSR currentPhysMask = { 0 };
+	PMTRR_RANGE_DESCRIPTOR mtrrRangeDesc;
+	UINT32 currentReg;
+	UINT32 numOfBitsInMask;
+
+	mtrrCap.flags = __readmsr(IA32_MTRRCAP);
+
+	for (currentReg = 0; currentReg < mtrrCap.Bitfield.vcnt; currentReg++)
+	{
+		currentPhysBase.flags = __readmsr(IA32_MTRR_PHYSBASE0 + (currentReg * 2));
+		currentPhysMask.flags = __readmsr(IA32_MTRR_PHYSMASK0 + (currentReg * 2));
+
+		if (currentPhysMask.Bitfield.valid)
+		{
+			mtrrRangeDesc = &eptState->mtrrRangeDesc[eptState->numberOfEnabledMemoryRanges++];
+			mtrrRangeDesc->physicalBaseAddress = currentPhysBase.Bitfield.physBase * PAGE_SIZE;
+
+			BitScanForward64(&numOfBitsInMask, currentPhysMask.Bitfield.physMask * PAGE_SIZE);
+
+			mtrrRangeDesc->physicalEndAddress = mtrrRangeDesc->physicalBaseAddress + ((1ULL << numOfBitsInMask) - 1ULL);
+			mtrrRangeDesc->memoryType = (UINT8)currentPhysBase.Bitfield.type;
+
+			// Free the range if it's Write-back
+			if (mtrrRangeDesc->memoryType == MEMORY_TYPE_WRITE_BACK)
+			{
+				eptState->numberOfEnabledMemoryRanges--;
+			}
+		}
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "MTRR Range: Base=0x%llx End=0x%llx Type=0x%x",
+			mtrrRangeDesc->physicalBaseAddress, mtrrRangeDesc->physicalEndAddress, mtrrRangeDesc->memoryType));
+	}
+	KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "Total MTRR Ranges Committed: %d", eptState->numberOfEnabledMemoryRanges));
+}
+
 PEPTP InitEpt()
 {
 	PAGED_CODE();

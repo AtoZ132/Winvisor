@@ -314,7 +314,7 @@ VOID SetupMsrBitmap(UINT64 msrBitmap)
 
 BOOLEAN InitSegmentDescriptor(PUINT8 gdtBase, UINT16 segmentSelector, PSEGMENT_DESCRIPTOR segDesc)
 {
-	PRAW_SEGMENT_DESCRIPTOR rawSegDesc = { 0 };
+	PRAW_SEGMENT_DESCRIPTOR rawSegDesc;
 
 	if (!(segDesc))
 	{
@@ -551,8 +551,8 @@ BOOLEAN AllocSystemData(PSYSTEM_DATA systemData)
 	}
 	SetupMsrBitmap(systemData->msrBitmap);
 
-	systemData->eptp = InitEpt();
-	if (!(systemData->eptp))
+	systemData->eptState.eptp = InitEpt();
+	if (!(systemData->eptState.eptp))
 	{
 		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] ept init failed\n"));
 		DeallocVmcsRegion(systemData->vmxonRegion);
@@ -561,6 +561,8 @@ BOOLEAN AllocSystemData(PSYSTEM_DATA systemData)
 		ExFreePoolWithTag(systemData->msrBitmap, WVSR_TAG);
 		return FALSE;
 	}
+
+	BuildMtrrMap(&systemData->eptState);
 
 	KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "[*] SystemData initialized, addr: %p\n", systemData));
 
@@ -654,6 +656,17 @@ VOID WvsrVmExitHandler(PREGS guestRegs)
 	{
 		KeLowerIrql(savedIrql);
 	}
+}
+
+NTSTATUS WvsrCheckFeatures()
+{
+	if (!NT_SUCCESS(CheckVmxSupport()) ||
+		!NT_SUCCESS(CheckEptFeatures()))
+	{
+		return STATUS_NOT_SUPPORTED;
+	}
+	
+	return STATUS_SUCCESS;
 }
 
 NTSTATUS WvsrInitVm() 

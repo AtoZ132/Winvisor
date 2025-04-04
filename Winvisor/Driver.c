@@ -34,8 +34,8 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
     DriverObject->MajorFunction[IRP_MJ_CREATE] = DriverCreate;
     DriverObject->MajorFunction[IRP_MJ_CLOSE] = DriverClose;
 
-    // Check for vmx support
-    ntStatus = CheckVmxSupport();
+    // Check for features support
+    ntStatus = WvsrCheckFeatures();
     if (!NT_SUCCESS(ntStatus))
     {
         return ntStatus;

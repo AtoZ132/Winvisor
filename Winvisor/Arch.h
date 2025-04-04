@@ -6,13 +6,32 @@
 #define CPUID_HV_ID 0x40000001
 #define CPUID_HV_PRESENT_BIT (1 << 31)
 
-// MSR addresses
-#define IA32_FEATURE_CONTROL 0x3A
 #define IA32_FEATURE_CONTROL_LOCK_BIT 0x1
 #define IA32_FEATURE_CONTROL_VMXON_OUTSIDE_SMX 0x4
+
+// MSR addresses
+#define IA32_FEATURE_CONTROL 0x3A
+#define IA32_MTRRCAP 0xFE
 #define IA32_SYSENTER_CS 0x174
 #define IA32_SYSENTER_ESP 0x175
 #define IA32_SYSENTER_EIP 0x176
+#define IA32_MTRR_PHYSBASE0 0x200
+#define IA32_MTRR_PHYSMASK0 0x201
+#define IA32_MTRR_PHYSBASE1 0x202
+#define IA32_MTRR_PHYSMASK1 0x203
+#define IA32_MTRR_PHYSBASE2 0x204
+#define IA32_MTRR_PHYSMASK2 0x205
+#define IA32_MTRR_PHYSBASE3 0x206
+#define IA32_MTRR_PHYSMASK3 0x207
+#define IA32_MTRR_PHYSBASE4 0x208
+#define IA32_MTRR_PHYSMASK4 0x209
+#define IA32_MTRR_PHYSBASE5 0x20A
+#define IA32_MTRR_PHYSMASK5 0x20B
+#define IA32_MTRR_PHYSBASE6 0x20C
+#define IA32_MTRR_PHYSMASK6 0x20D
+#define IA32_MTRR_PHYSBASE7 0x20E
+#define IA32_MTRR_PHYSMASK7 0x20F
+#define IA32_MTRR_DEF_TYPE 0x2FF
 #define IA32_VMX_BASIC 0x480
 #define IA32_VMX_CR0_FIXED0 0x486
 #define IA32_VMX_CR0_FIXED1 0x487
@@ -31,7 +50,7 @@
 
 
 // MSR structures
-typedef union _IA32_VMX_BASIC 
+typedef union _IA32_VMX_BASIC_MSR 
 {
 	struct 
 	{
@@ -50,6 +69,58 @@ typedef union _IA32_VMX_BASIC
 	} Bitfield;
 	UINT64 flags;
 } IA32_VMX_BASIC_MSR, *PIA32_VMX_BASIC_MSR;
+
+// 12.11.2.1 IA32_MTRR_DEF_TYPE MSR
+typedef union _IA32_MTRR_DEF_TYPE_MSR
+{
+	struct
+	{
+		UINT64 type : 8;
+		UINT64 reserved0 : 2;
+		UINT64 fixedRangeMtrrsEnable : 1;
+		UINT64 mtrrEnable : 1;
+		UINT64 reserved1 : 52;
+	} Bitfield;
+	UINT64 flags;
+} IA32_MTRR_DEF_TYPE_MSR, *PIA32_MTRR_DEF_TYPE_MSR;
+
+typedef union _IA32_MTRRCAP_MSR
+{
+	struct
+	{
+		UINT64 vcnt : 8; // The number of variable ranges implemented on the processor.
+		UINT64 fix : 1;
+		UINT64 reserved0 : 1;
+		UINT64 wc : 1;
+		UINT64 smrr : 1;
+		UINT64 reserved1 : 52;
+	} Bitfield;
+	UINT64 flags;
+} IA32_MTRRCAP_MSR, *PIA32_MTRRCAP_MSR;
+
+typedef union _IA32_MTRR_PHYSBASE_MSR
+{
+	struct
+	{
+		UINT64 type : 8;
+		UINT64 reserved0 : 4;
+		UINT64 physBase : 36;
+		UINT64 reserved1 : 16;
+	} Bitfield;
+	UINT64 flags;
+} IA32_MTRR_PHYSBASE_MSR, *PIA32_MTRR_PHYSBASE_MSR;
+
+typedef union _IA32_MTRR_PHYSMASK_MSR
+{
+	struct
+	{
+		UINT64 reserved0 : 11;
+		UINT64 valid : 1;
+		UINT64 physMask : 36;
+		UINT64 reserved1 : 16;
+	} Bitfield;
+	UINT64 flags;
+} IA32_MTRR_PHYSMASK_MSR, * PIA32_MTRR_PHYSMASK_MSR;
 
 typedef struct _RAW_SEGMENT_DESCRIPTOR
 {

@@ -164,7 +164,7 @@ typedef struct _SYSTEM_DATA
 	PVMCS_REGION vmcsRegion;
 	UINT64 vmmStack;
 	UINT64 msrBitmap;
-	PEPTP eptp;
+	EPT_STATE eptState;
 } SYSTEM_DATA, *PSYSTEM_DATA;
 
 typedef union _VMCS_COMP_ENCODING 
@@ -650,6 +650,7 @@ VOID DeallocVmcsRegion(UINT64* vmcsRegionPhysical);
 BOOLEAN AllocSystemData(PSYSTEM_DATA systemData);
 VOID DeallocSystemData(PSYSTEM_DATA systemData);
 VOID WvsrVmExitHandler(PREGS guestRegs);
+NTSTATUS WvsrCheckFeatures();
 NTSTATUS WvsrInitVm();
 VOID WvsrStartVm(UINT32 processorId, NTSTATUS* ntStatus);
 VOID WvsrStopVm();
