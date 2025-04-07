@@ -16,13 +16,12 @@ NTSTATUS CheckEptFeatures()
 	return STATUS_SUCCESS;
 }
 
-
 VOID BuildMtrrMap(PEPT_STATE eptState)
 {
 	IA32_MTRRCAP_MSR mtrrCap = { 0 };
 	IA32_MTRR_PHYSBASE_MSR currentPhysBase = { 0 };
 	IA32_MTRR_PHYSMASK_MSR currentPhysMask = { 0 };
-	PMTRR_RANGE_DESCRIPTOR mtrrRangeDesc;
+	PMTRR_RANGE_DESCRIPTOR mtrrRangeDesc = NULL;
 	UINT32 currentReg;
 	UINT32 numOfBitsInMask;
 
@@ -53,6 +52,98 @@ VOID BuildMtrrMap(PEPT_STATE eptState)
 			mtrrRangeDesc->physicalBaseAddress, mtrrRangeDesc->physicalEndAddress, mtrrRangeDesc->memoryType));
 	}
 	KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "Total MTRR Ranges Committed: %d", eptState->numberOfEnabledMemoryRanges));
+}
+
+VOID setupPml2Entry(PEPT_PML2_ENTRY pml2Entry, UINT64 pageFrameNumber, PEPT_STATE eptState)
+{
+	UINT64 addressOfPage;
+	UINT64 currentMtrrRange;
+	UINT64 targetMemoryType = MEMORY_TYPE_WRITE_BACK;
+
+	pml2Entry->Bitfields.physicalAddress = pageFrameNumber;
+	addressOfPage = pageFrameNumber * SIZE_2_MB;
+
+	if (pageFrameNumber == 0) 
+	{
+		pml2Entry->Bitfields.memoryType = MEMORY_TYPE_UNCACHEABLE;
+		return;
+	}
+
+	for (currentMtrrRange = 0; currentMtrrRange < eptState->numberOfEnabledMemoryRanges; currentMtrrRange++)
+	{
+		if ((addressOfPage <= eptState->mtrrRangeDesc[currentMtrrRange].physicalEndAddress) &&
+			((addressOfPage + SIZE_2_MB - 1) >= eptState->mtrrRangeDesc[currentMtrrRange].physicalBaseAddress))
+		{
+			targetMemoryType = eptState->mtrrRangeDesc[currentMtrrRange].memoryType;
+
+			// Uncacheable takes precedence - chapter 12.11.4.1
+			if (targetMemoryType == MEMORY_TYPE_UNCACHEABLE)
+			{
+				break;
+			}
+		}
+	}
+
+	pml2Entry->Bitfields.memoryType = targetMemoryType;
+}
+
+PEPT_PAGE_TABLE CreateIdentityPageTable(PEPT_STATE eptState)
+{
+	PHYSICAL_ADDRESS maxPhyAddr = { 0 };
+	PEPT_PAGE_TABLE pageTable;
+	EPT_PML3_POINTER pml3Template;
+	EPT_PML2_ENTRY largePageTemplate;
+	UINT32 entryIndex;
+	UINT32 pml2EntryIndex;
+
+	maxPhyAddr.QuadPart = MAXULONG64;
+
+	pageTable = MmAllocateContiguousMemory((sizeof(EPT_PAGE_TABLE) / PAGE_SIZE) * PAGE_SIZE, maxPhyAddr);
+	if (!pageTable)
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] Failed to allocate ept page table\n"));
+		return NULL;
+	}
+	RtlZeroMemory(pageTable, sizeof(EPT_PAGE_TABLE));
+
+	InitializeListHead(&pageTable->dynamicSplitList);
+	
+	pageTable->pml4[0].Bitfields.physicalAddress = (UINT64)WvsrPaFromVa(&pageTable->pml3[0]) / PAGE_SIZE;
+	pageTable->pml4[0].Bitfields.read = 1;
+	pageTable->pml4[0].Bitfields.write = 1;
+	pageTable->pml4[0].Bitfields.execute = 1;
+
+	pml3Template.flags = 0;
+	pml3Template.Bitfields.read = 1;
+	pml3Template.Bitfields.write = 1;
+	pml3Template.Bitfields.execute = 1;
+	
+	// Setup all the 512 pml3 entries to rwx for the mapping
+	__stosq((PULONG64)&pageTable->pml3[0], pml3Template.flags, PML3E_ENTRIES_COUNT);
+
+	for (entryIndex = 0; entryIndex < PML2E_ENTRIES_COUNT; entryIndex++)
+	{
+		pageTable->pml3[entryIndex].Bitfields.physicalAddress = (UINT64)WvsrPaFromVa(&pageTable->pml2[entryIndex][0]) / PAGE_SIZE;
+	}
+
+	largePageTemplate.flags = 0;
+	largePageTemplate.Bitfields.read = 1;
+	largePageTemplate.Bitfields.write = 1;
+	largePageTemplate.Bitfields.execute = 1;
+	largePageTemplate.Bitfields.largePage = 1;
+
+	// Setup 512 * 512 pml2 entries
+	__stosq((PULONG64)&pageTable->pml2[0], largePageTemplate.flags, PML3E_ENTRIES_COUNT * PML2E_ENTRIES_COUNT);
+
+	for (entryIndex = 0; entryIndex < PML3E_ENTRIES_COUNT; entryIndex++)
+	{
+		for (pml2EntryIndex = 0; pml2EntryIndex < PML2E_ENTRIES_COUNT; pml2EntryIndex++)
+		{
+			setupPml2Entry(&pageTable->pml2[entryIndex][pml2EntryIndex], (entryIndex * PML3E_ENTRIES_COUNT) + pml2EntryIndex, eptState);
+		}
+	}
+
+	return pageTable;
 }
 
 PEPTP InitEpt()
