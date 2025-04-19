@@ -155,14 +155,24 @@ typedef struct _VMCS_REGION
 	UINT8  vmcsData[PAGE_SIZE - 8];
 } VMCS_REGION, *PVMCS_REGION;
 
+typedef struct _SYSTEM_DATA SYSTEM_DATA, * PSYSTEM_DATA;
 /*
-* the vmcs regions hold the virtual address to the regions
+* Keep the systemData pointer on top of the host stack for availability during vm-exits
+*/
+typedef struct _VMM_STACK 
+{
+	UINT8 vmmStack[VMM_STACK_SIZE];
+	PSYSTEM_DATA systemData;
+} VMM_STACK, * PVMM_STACK;
+
+/*
+* the VMCS regions hold the virtual address to the regions
 */
 typedef struct _SYSTEM_DATA 
 {
 	PVMCS_REGION vmxonRegion;
 	PVMCS_REGION vmcsRegion;
-	UINT64 vmmStack;
+	VMM_STACK vmmStack;
 	UINT64 msrBitmap;
 	EPT_STATE eptState;
 } SYSTEM_DATA, *PSYSTEM_DATA;
@@ -193,7 +203,7 @@ typedef union _VM_EXIT_DATA
 		UINT32 reserved2 : 4;
 	} Bitfield;
 	UINT32 flags;
-}VM_EXIT_DATA, *PVM_EXIT_DATA;
+} VM_EXIT_DATA, *PVM_EXIT_DATA;
 
 typedef union _MOV_CR_ACCESS_QUAL
 {
@@ -209,7 +219,7 @@ typedef union _MOV_CR_ACCESS_QUAL
 		UINT32 unused3 : 32; // These bits exist only on processors that support Intel 64 architecture.
 	}Bitfield;
 	UINT64 flags;
-}MOV_CR_ACCESS_QUAL, *PMOV_CR_ACCESS_QUAL;
+} MOV_CR_ACCESS_QUAL, *PMOV_CR_ACCESS_QUAL;
 
 
 /*
@@ -632,7 +642,7 @@ BOOLEAN VmxonOp(UINT64* vmxonRegionPhysical);
 BOOLEAN VmptrldOp(UINT64* vmcsPhysical);
 BOOLEAN VmclearOp(UINT64* vmcsPhysicalAddress);
 VOID VmxoffOp();
-VOID VmxInveptOp(int inveptType, EPTP eptp);
+VOID VmxInveptOp(UINT64 context);
 VOID VmResumeErrorHandler();
 VOID IncrementIp();
 VOID VmExitCpuidHandler(PREGS regs);
@@ -640,6 +650,7 @@ VOID VmExitCrAccessHandler(PREGS regs);
 VOID VmExitMsrReadHandler(PREGS regs);
 VOID VmExitMsrWriteHandler(PREGS regs);
 VOID VmExitVmxHandler(PREGS regs);
+VOID VmExitVmcallHandler(UINT64 vmcallNumber, UINT64 param1, UINT64 param2);
 VOID SetupMsrBitmap(UINT64 msrBitmap);
 BOOLEAN InitSegmentDescriptor(PUINT8 gdtBase, UINT16 segmentSelector, PSEGMENT_DESCRIPTOR segDesc);
 BOOLEAN SetupGuestSelectorFields(PUINT8 gdtBase, UINT16 segmentSelector, UINT16 segmentSelectorIndex);
@@ -649,7 +660,7 @@ UINT64* InitVmcsRegion();
 VOID DeallocVmcsRegion(UINT64* vmcsRegionPhysical);
 BOOLEAN AllocSystemData(PSYSTEM_DATA systemData);
 VOID DeallocSystemData(PSYSTEM_DATA systemData);
-VOID WvsrVmExitHandler(PREGS guestRegs);
+VOID WvsrVmExitHandler(PSYSTEM_DATA systemData, PREGS guestRegs);
 NTSTATUS WvsrCheckFeatures();
 NTSTATUS WvsrInitVm();
 VOID WvsrStartVm(UINT32 processorId, NTSTATUS* ntStatus);

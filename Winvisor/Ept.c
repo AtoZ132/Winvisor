@@ -1,6 +1,17 @@
 #include "Ept.h"
 
 
+VOID NotifyInvalidateAllEpt(UINT64 context)
+{
+	// Notify all CPUs
+	KeIpiGenericCall(InvalidateEptByVmcall, context);
+}
+
+VOID InvalidateEptByVmcall(UINT64 context)
+{
+	InvokeVmcall(VMCALL_INVEPT, context, NULL);
+}
+
 NTSTATUS CheckEptFeatures()
 {
 	IA32_MTRR_DEF_TYPE_MSR mtrrDefType = { 0 };
@@ -9,14 +20,14 @@ NTSTATUS CheckEptFeatures()
 
 	if (!mtrrDefType.Bitfield.mtrrEnable)
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] mtrr dynamic ranges feature not supported"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] MTRR dynamic ranges feature not supported"));
 		return STATUS_NOT_SUPPORTED;
 	}
 
 	return STATUS_SUCCESS;
 }
 
-VOID BuildMtrrMap(PEPT_STATE eptState)
+VOID EptBuildMtrrMap(PEPT_STATE eptState)
 {
 	IA32_MTRRCAP_MSR mtrrCap = { 0 };
 	IA32_MTRR_PHYSBASE_MSR currentPhysBase = { 0 };
@@ -54,7 +65,7 @@ VOID BuildMtrrMap(PEPT_STATE eptState)
 	KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "Total MTRR Ranges Committed: %d", eptState->numberOfEnabledMemoryRanges));
 }
 
-VOID setupPml2Entry(PEPT_PML2_ENTRY pml2Entry, UINT64 pageFrameNumber, PEPT_STATE eptState)
+VOID EptSetupPml2Entry(PEPT_PML2_ENTRY pml2Entry, UINT64 pageFrameNumber, PEPT_STATE eptState)
 {
 	UINT64 addressOfPage;
 	UINT64 currentMtrrRange;
@@ -87,7 +98,7 @@ VOID setupPml2Entry(PEPT_PML2_ENTRY pml2Entry, UINT64 pageFrameNumber, PEPT_STAT
 	pml2Entry->Bitfields.memoryType = targetMemoryType;
 }
 
-PEPT_PAGE_TABLE CreateIdentityPageTable(PEPT_STATE eptState)
+PEPT_PAGE_TABLE EptCreateIdentityPageTable(PEPT_STATE eptState)
 {
 	PHYSICAL_ADDRESS maxPhyAddr = { 0 };
 	PEPT_PAGE_TABLE pageTable;
@@ -139,116 +150,255 @@ PEPT_PAGE_TABLE CreateIdentityPageTable(PEPT_STATE eptState)
 	{
 		for (pml2EntryIndex = 0; pml2EntryIndex < PML2E_ENTRIES_COUNT; pml2EntryIndex++)
 		{
-			setupPml2Entry(&pageTable->pml2[entryIndex][pml2EntryIndex], (entryIndex * PML3E_ENTRIES_COUNT) + pml2EntryIndex, eptState);
+			EptSetupPml2Entry(&pageTable->pml2[entryIndex][pml2EntryIndex], (entryIndex * PML3E_ENTRIES_COUNT) + pml2EntryIndex, eptState);
 		}
 	}
 
 	return pageTable;
 }
 
-PEPTP InitEpt()
+PEPT_PML2_ENTRY EptGetPml2Entry(PEPT_PAGE_TABLE pageTable, UINT64 physicalAddress)
 {
-	PAGED_CODE();
+	UINT64 pml3Index, pml2Index, pml4Index;
+	PEPT_PML2_ENTRY pml2Entry;
+
+	pml2Index = ADDRMASK_EPT_PML2_INDEX(physicalAddress);
+	pml3Index = ADDRMASK_EPT_PML3_INDEX(physicalAddress);
+	pml4Index = ADDRMASK_EPT_PML4_INDEX(physicalAddress);
+
+	if (pml4Index > 0)
+	{
+		return NULL;
+	}
+
+	pml2Entry = &pageTable->pml2[pml3Index][pml2Index];
+
+	return pml2Entry;
+}
+
+PEPT_PML1_ENTRY EptGetPml1Entry(PEPT_PAGE_TABLE pageTable, UINT64 physicalAddress)
+{
+	UINT64 pml3Index, pml2Index, pml4Index;
+	PEPT_PML2_ENTRY pml2Entry;
+	PEPT_PML1_ENTRY pml1Entry;
+	PEPT_PML2_POINTER pml2Ptr;
+
+	pml2Index = ADDRMASK_EPT_PML2_INDEX(physicalAddress);
+	pml3Index = ADDRMASK_EPT_PML3_INDEX(physicalAddress);
+	pml4Index = ADDRMASK_EPT_PML4_INDEX(physicalAddress);
+
+	if (pml4Index > 0)
+	{
+		return NULL;
+	}
+
+	pml2Entry = &pageTable->pml2[pml3Index][pml2Index];
+	if (pml2Entry->Bitfields.largePage)
+	{
+		return NULL;
+	}
+
+	pml2Ptr = (PEPT_PML2_POINTER)pml2Entry;
+
+	pml1Entry = (PEPT_PML1_ENTRY)WvsrPaFromVa((UINT64*)(pml2Ptr->Bitfields.physicalAddress * PAGE_SIZE));
+	if (!pml1Entry)
+	{
+		return NULL;
+	}
+	pml1Entry = &pml1Entry[ADDRMASK_EPT_PML1_INDEX(physicalAddress)];
+
+	return pml1Entry;
+}
+
+BOOLEAN EptSplitLargePage(PEPT_STATE eptState, UINT64 physicalAddress)
+{
+	PEPT_PML2_ENTRY targetEntry;
+	PEPT_DYNAMIC_SPLIT newSplit;
+	EPT_PML1_ENTRY pml1EntryTemplate;
+	UINT32 entryIndex;
+	EPT_PML2_POINTER newPml2Pointer;
+
+	targetEntry = EptGetPml2Entry(eptState->eptPageTable, physicalAddress);
+	if (!targetEntry)
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] Invalid physical address\n"));
+		return FALSE;
+	}
+
+	// Page is already split
+	if (!targetEntry->Bitfields.largePage)
+	{
+		return TRUE;
+	}
+
+	newSplit = (PEPT_DYNAMIC_SPLIT)eptState->preAllocatedBuffer;
+	eptState->preAllocatedBuffer = NULL;
+	if (!newSplit)
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] Failed to allocate dynamic split memory\n"));
+		return FALSE;
+	}
+	RtlZeroMemory(newSplit, sizeof(EPT_DYNAMIC_SPLIT));
+
+	pml1EntryTemplate.flags = 0;
+	pml1EntryTemplate.Bitfields.read = 1;
+	pml1EntryTemplate.Bitfields.write = 1;
+	pml1EntryTemplate.Bitfields.execute = 1;
+
+	__stosq((PULONG64)&newSplit->pml1[0], pml1EntryTemplate.flags, PML1E_ENTRIES_COUNT);
+
+	for (entryIndex = 0; entryIndex < PML1E_ENTRIES_COUNT; entryIndex++)
+	{
+		newSplit->pml1[entryIndex].Bitfields.physicalAddress = 
+			((targetEntry->Bitfields.physicalAddress * SIZE_2_MB) / PAGE_SIZE) + entryIndex;
+	}
+
+	newPml2Pointer.flags = 0;
+	newPml2Pointer.Bitfields.read = 1;
+	newPml2Pointer.Bitfields.write = 1;
+	newPml2Pointer.Bitfields.execute = 1;
+	newPml2Pointer.Bitfields.physicalAddress = (UINT64)WvsrPaFromVa(&newSplit->pml1[0]) / PAGE_SIZE;
+
+	InsertHeadList(&eptState->eptPageTable->dynamicSplitList, &newSplit->dynamicSplitList);
+
+	RtlCopyMemory(targetEntry, &newPml2Pointer, sizeof(newPml2Pointer));
+
+	return TRUE;
+}
+
+BOOLEAN EptVmxRootModePageHook(PEPT_STATE eptState, PVOID targetFunction, BOOLEAN hasLaunched)
+{
+	PUINT64 targetVirtualAddress;
+	UINT64 physicalAddress;
+	PEPT_PML1_ENTRY targetPage;
+	EPT_PML1_ENTRY originalPage;
+
+	targetVirtualAddress = PAGE_ALIGN(targetFunction);
+	physicalAddress = (UINT64)WvsrPaFromVa(targetVirtualAddress);
+	if (!physicalAddress)
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] couldn't map virt to physical!\n"));
+		return FALSE;
+	}
+
+	if (!EptSplitLargePage(eptState, physicalAddress))
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
+			"[-] couldn't split large page at: 0x%llx\n", physicalAddress));
+		return FALSE;
+	}
+
+	targetPage = EptGetPml1Entry(eptState->eptPageTable, physicalAddress);
+	if (!targetPage)
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] couldn't get the PML1 entry!\n"));
+		return FALSE;
+	}
+
+	originalPage = *targetPage;
+
+	originalPage.Bitfields.read = 1;
+	originalPage.Bitfields.write = 1;
+	originalPage.Bitfields.execute = 0;
+
+	targetPage->flags = originalPage.flags;
+
+	if (hasLaunched)
+	{
+		NotifyInvalidateAllEpt(eptState->eptp.flags);
+	}
+
+	return TRUE;
+}
+
+BOOLEAN EptPageHook(PEPT_STATE eptState, PVOID targetFunction, BOOLEAN hasLaunched)
+{
+	// Pre-allocated buffer hasn't been created yet
+	if (!(eptState->preAllocatedBuffer))
+	{
+		eptState->preAllocatedBuffer = (PUINT64)ExAllocatePoolWithTag(NonPagedPool, sizeof(EPT_DYNAMIC_SPLIT), WVSR_TAG);
+		if (!(eptState->preAllocatedBuffer))
+		{
+			KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] pre-allocated buffer allocation failed!\n"));
+			return FALSE;
+		}
+		RtlZeroMemory(eptState->preAllocatedBuffer, sizeof(EPT_DYNAMIC_SPLIT));
+	}
+
+	if (hasLaunched)
+	{
+		InvokeVmcall(VMCALL_EXEC_HOOK_PAGE, eptState, targetFunction);
+		NotifyInvalidateAllEpt(eptState->eptp.flags);
+		return TRUE;
+	}
+	else
+	{
+		if ((EptVmxRootModePageHook(eptState, targetFunction, hasLaunched)))
+		{
+			KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "[*] Hook placed!\n"));
+			return TRUE;
+		}
+	}
+
+	KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] page hook failed!\n"));
+
+	return FALSE;
+}
+
+BOOLEAN EptHandleEptViolation(UINT64 exitQualification, PEPT_STATE eptState, UINT64 guestPhysicalAddress)
+{
+	EPT_VIOLATION_EXIT_QUAL eptExitQual = { 0 };
+	UINT64 physicalAddress;
+	PEPT_PML1_ENTRY pml1Entry;
+
+	eptExitQual.flags = exitQualification;
+	physicalAddress = PAGE_ALIGN(guestPhysicalAddress);
+
+	pml1Entry = EptGetPml1Entry(eptState->eptPageTable, physicalAddress);
+	if (!pml1Entry)
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] In EptHandleEptViolation: failed get the PML1 entry!\n"));
+		return FALSE;
+	}
+
+	if (!eptExitQual.Bitfield.eptExecutable && eptExitQual.Bitfield.causeExecute)
+	{
+		pml1Entry->Bitfields.execute = 1;
+		InvalidateEptByVmcall(eptState->eptp.flags);
+
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
+// Organize all the eptState init here
+BOOLEAN InitializeEptState(PEPT_STATE eptState)
+{
+	PEPT_PAGE_TABLE pageTable;
+	EPTP eptp = { 0 };
 	
-	PEPTP eptp = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, WVSR_TAG);
-	if (eptp == NULL)
-	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] eptp allocation failed"));
-		return NULL;
-	}
+	// Init the MTRR map
+	EptBuildMtrrMap(eptState);
 
-	RtlZeroMemory(eptp, PAGE_SIZE);
-	PEPT_PML4E epml4e = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, WVSR_TAG);
-	if (epml4e == NULL)
+	// Init the identity page table
+	pageTable = EptCreateIdentityPageTable(eptState);
+	if (!pageTable)
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] epml4e allocation failed"));
-		ExFreePool(eptp);
-		return NULL;
-	}
-
-	RtlZeroMemory(epml4e, PAGE_SIZE);
-	PEPT_PDPTE epdpte = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, WVSR_TAG);
-	if (epdpte == NULL)
-	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] epdpte allocation failed"));
-		ExFreePool(epml4e);
-		ExFreePool(eptp);
-		return NULL;
-	}
-
-	RtlZeroMemory(epdpte, PAGE_SIZE);
-	PEPT_PDE epde = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, WVSR_TAG);
-	if (epde == NULL)
-	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] epde allocation failed"));
-		ExFreePool(epdpte);
-		ExFreePool(epml4e);
-		ExFreePool(eptp);
-		return NULL;
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] Ept Init Failed!\n"));
+		return FALSE;
 	}
 	
-	RtlZeroMemory(epde, PAGE_SIZE);
-	PEPT_PTE epte = ExAllocatePoolWithTag(NonPagedPool, PAGE_SIZE, WVSR_TAG);
-	if (epte == NULL)
-	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] epte allocation failed"));
-		ExFreePool(epde);
-		ExFreePool(epdpte);
-		ExFreePool(epml4e);
-		ExFreePool(eptp);
-		return NULL;
-	}
-
-	RtlZeroMemory(epte, PAGE_SIZE);
-
-	// Alloc a few pages to test stuff before actually implementing EPT as planned
-	const int numOfPages = 10;
-	UINT64 GuestTestPages = ExAllocatePoolWithTag(NonPagedPool, numOfPages * PAGE_SIZE, WVSR_TAG);
-
-	if (GuestTestPages == NULL)
-	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] epte allocation failed"));
-		ExFreePool(epte);
-		ExFreePool(epde);
-		ExFreePool(epdpte);
-		ExFreePool(epml4e);
-		ExFreePool(eptp);
-		return NULL;
-	}
-
-	RtlZeroMemory(GuestTestPages, numOfPages * PAGE_SIZE);
-	memset(GuestTestPages, 0xf4, numOfPages * PAGE_SIZE);
-	gGuestMappedArea = GuestTestPages;
-	for (int i = 0; i < numOfPages; i++)
-	{
-		epte[i].Bitfields.read = 1;
-		epte[i].Bitfields.write = 1;
-		epte[i].Bitfields.execute = 1;
-		epte[i].Bitfields.memoryType = WB;
-		epte[i].Bitfields.physicalAddress = WvsrPaFromVa((GuestTestPages + (i * PAGE_SIZE)) / PAGE_SIZE);
-	}
-
-	epde->Bitfields.read = 1;
-	epde->Bitfields.write = 1;
-	epde->Bitfields.execute = 1;
-	epde->Bitfields.physicalAddress = ((UINT64)WvsrPaFromVa(epte) / PAGE_SIZE);
-
-	epdpte->Bitfields.read = 1;
-	epdpte->Bitfields.write = 1;
-	epdpte->Bitfields.execute = 1;
-	epdpte->Bitfields.physicalAddress = ((UINT64)WvsrPaFromVa(epde) / PAGE_SIZE);
-
-
-	epml4e->Bitfields.read = 1;
-	epml4e->Bitfields.write = 1;
-	epml4e->Bitfields.execute = 1;
-	epml4e->Bitfields.physicalAddress = ((UINT64)WvsrPaFromVa(epdpte) / PAGE_SIZE);
-
-
-	eptp->Bitfields.memoryType = WB;
-	eptp->Bitfields.dirtyAndAccessFlagEnable = 1;
-	eptp->Bitfields.eptPageWalkLen = 3;
-	eptp->Bitfields.pml4Addr = ((UINT64)WvsrPaFromVa(epml4e) / PAGE_SIZE);
+	eptState->eptPageTable = pageTable;
 	
-	return eptp;
+	// Init the ept pointer
+	eptp.flags = 0;
+	eptp.Bitfields.memoryType = MEMORY_TYPE_WRITE_BACK;
+	eptp.Bitfields.dirtyAndAccessFlagEnable = FALSE;
+	eptp.Bitfields.eptPageWalkLen = 3;
+	eptp.Bitfields.pml4Addr = (UINT64)WvsrPaFromVa(&pageTable->pml4) / PAGE_SIZE;
+
+	eptState->eptp = eptp;
+
+	return TRUE;
 }

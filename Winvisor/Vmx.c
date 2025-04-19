@@ -55,7 +55,7 @@ NTSTATUS CheckVmxSupport()
 }
 
 /*
-* vmxon operation is a per preocessor method and affects only the "current" processor
+* vmxon operation is a per processor method and affects only the "current" processor
 */
 BOOLEAN VmxonOp(UINT64* vmxonRegionPhysical)
 {
@@ -99,7 +99,7 @@ BOOLEAN VmclearOp(UINT64* vmcsPhysicalAddress)
 }
 
 /*
-* vmxoff operation is a per preocessor method and affects only the "current" processor
+* vmxoff operation is a per processor method and affects only the "current" processor
 */
 VOID VmxoffOp()
 {
@@ -113,23 +113,18 @@ VOID VmxoffOp()
 
 /*
 * To invalidate a single ept pass SINGLE_CONTEXT and the EPTP.
-* To invalidate all epts pass GLOBAL CONTEXT and NULL.
+* To invalidate all EPTs pass GLOBAL CONTEXT and NULL.
 */
-VOID VmxInveptOp(int inveptType, EPTP eptp)
+VOID VmxInveptOp(UINT64 context)
 {
-	switch (inveptType)
+	if (context == NULL)
 	{
-	case GLOBAL_CONTEXT:
 		InveptOp(GLOBAL_CONTEXT, NULL);
-		break;
-	case SINGLE_CONTEXT:
-	{
-		INVEPT_DESC inveptDesc = { eptp, 0 };
-		InveptOp(SINGLE_CONTEXT, &inveptDesc);
-		break;
 	}
-	default:
-		break;
+	else
+	{
+		INVEPT_DESC inveptDesc = { context, 0 };
+		InveptOp(SINGLE_CONTEXT, &inveptDesc);
 	}
 }
 
@@ -286,6 +281,25 @@ VOID VmExitVmxHandler(PREGS regs)
 	__vmx_vmwrite(GUEST_RFLAGS, rflags | 0x1); // cf = 1. As per Chapter 31.2 for the VMfailInvalid case.
 }
 
+VOID VmExitVmcallHandler(UINT64 vmcallNumber, UINT64 param1, UINT64 param2)
+{
+	switch (vmcallNumber)
+	{
+	case VMCALL_EXEC_HOOK_PAGE:
+	{
+		EptVmxRootModePageHook(param1, param2, TRUE);
+		break;
+	}
+	case VMCALL_INVEPT:
+	{
+		VmxInveptOp(param1);
+		break;
+	}
+	default:
+		break;
+	}
+}
+
 VOID SetupMsrBitmap(UINT64 msrBitmap)
 {
 	RTL_BITMAP readMsrLowBitmap = { 0 };
@@ -417,7 +431,8 @@ BOOLEAN SetupVmcs(PSYSTEM_DATA systemData)
 		AdjustVmcsControlField(VMX_PRIMARY_BASED_HLT_EXITING | VMX_PRIMARY_BASED_ACTIVATE_SECONDARY_CONTROLS | VMX_PRIMARY_BASED_USE_MSR_BITMAPS,
 			IA32_VMX_PROCBASED_CTLS));
 	__vmx_vmwrite(SECONDARY_PROCESSOR_BASED_VM_EXECUTION_CONTROLS,
-		AdjustVmcsControlField(VMX_SECONDARY_BASED_ENABLE_RDTSCP | VMX_SECONDARY_BASED_ENABLE_XSAVES_XRSTORS | VMX_SECONDARY_BASED_ENABLE_INVPCID,
+		AdjustVmcsControlField(VMX_SECONDARY_BASED_ENABLE_RDTSCP | VMX_SECONDARY_BASED_ENABLE_XSAVES_XRSTORS | 
+			VMX_SECONDARY_BASED_ENABLE_EPT | VMX_SECONDARY_BASED_ENABLE_INVPCID,
 			IA32_VMX_PROCBASED_CTLS2));
 	__vmx_vmwrite(PIN_BASED_VM_EXECUTION_CONTROLS,
 		AdjustVmcsControlField(0, IA32_VMX_PINBASED_CTLS));
@@ -473,17 +488,20 @@ BOOLEAN SetupVmcs(PSYSTEM_DATA systemData)
 	__vmx_vmwrite(HOST_IA32_SYSENTER_ESP, __readmsr(IA32_SYSENTER_ESP));
 
 	__vmx_vmwrite(ADDR_OF_MSR_BITMAPS_FULL, WvsrPaFromVa(systemData->msrBitmap));
+
+	__vmx_vmwrite(EPT_POINTER_FULL, systemData->eptState.eptp.flags);
+
 	__vmx_vmwrite(GUEST_RIP, gGuestMappedArea);
 	__vmx_vmwrite(GUEST_RSP, gGuestMappedArea);
 
-	__vmx_vmwrite(HOST_RSP, (UINT64)(systemData->vmmStack + VMM_STACK_SIZE - 1));
+	__vmx_vmwrite(HOST_RSP, (UINT64)&systemData->vmmStack.systemData);
 	__vmx_vmwrite(HOST_RIP, (UINT64)VmExitHandler);
 
 	return TRUE;
 }
 
 /*
-*  On success, returns a pointer to the virtual address of the vmcs region.
+*  On success, returns a pointer to the virtual address of the VMCS region.
 *  On error, returns null
 */
 UINT64* InitVmcsRegion()
@@ -497,13 +515,13 @@ UINT64* InitVmcsRegion()
 	pVmcsRegion = (PVMCS_REGION)MmAllocateContiguousMemory(sizeof(VMCS_REGION), maxPhysicalAddress);
 	if (!pVmcsRegion) 
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] Failed to allocate vmcs region\n"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] Failed to allocate VMCS region\n"));
 		return NULL;
 	}
 	RtlZeroMemory(pVmcsRegion, sizeof(VMCS_REGION));
 	pVmcsRegion->vmcsRevisionId = (UINT32)vmxBasicMsr.Bitfield.revisionId;
 	KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL,
-		"[*] vmcs region initialized, addr: %p, revision: %d\n", pVmcsRegion, pVmcsRegion->vmcsRevisionId));
+		"[*] VMCS region initialized, addr: %p, revision: %d\n", pVmcsRegion, pVmcsRegion->vmcsRevisionId));
 
 	return pVmcsRegion;
 }
@@ -518,27 +536,19 @@ BOOLEAN AllocSystemData(PSYSTEM_DATA systemData)
 	systemData->vmxonRegion = InitVmcsRegion();
 	if (!(systemData->vmxonRegion))
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] vmxon region init failed\n"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] VMXON region init failed\n"));
 		return FALSE;
 	}
 
 	systemData->vmcsRegion = InitVmcsRegion();
 	if (!(systemData->vmcsRegion))
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] vmcs region init failed\n"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] VMCS region init failed\n"));
 		DeallocVmcsRegion(systemData->vmxonRegion);
 		return FALSE;
 	}
 	
-	// The size of the kernel-mode stack is limited to approximately three pages
-	systemData->vmmStack = ExAllocatePoolWithTag(NonPagedPool, VMM_STACK_SIZE, WVSR_TAG);
-	if (!systemData->vmmStack)
-	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] Failed to allocate vmmStack\n"));
-		DeallocVmcsRegion(systemData->vmxonRegion);
-		DeallocVmcsRegion(systemData->vmcsRegion);
-		return FALSE;
-	}
+	systemData->vmmStack.systemData = systemData;
 
 	systemData->msrBitmap = ExAllocatePoolZero(NonPagedPool, PAGE_SIZE, WVSR_TAG);
 	if (!(systemData->msrBitmap))
@@ -546,23 +556,9 @@ BOOLEAN AllocSystemData(PSYSTEM_DATA systemData)
 		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] Failed to allocate msr bitmap\n"));
 		DeallocVmcsRegion(systemData->vmxonRegion);
 		DeallocVmcsRegion(systemData->vmcsRegion);
-		ExFreePoolWithTag(systemData->vmmStack, WVSR_TAG);
 		return FALSE;
 	}
 	SetupMsrBitmap(systemData->msrBitmap);
-
-	systemData->eptState.eptp = InitEpt();
-	if (!(systemData->eptState.eptp))
-	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] ept init failed\n"));
-		DeallocVmcsRegion(systemData->vmxonRegion);
-		DeallocVmcsRegion(systemData->vmcsRegion);
-		ExFreePoolWithTag(systemData->vmmStack, WVSR_TAG);
-		ExFreePoolWithTag(systemData->msrBitmap, WVSR_TAG);
-		return FALSE;
-	}
-
-	BuildMtrrMap(&systemData->eptState);
 
 	KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "[*] SystemData initialized, addr: %p\n", systemData));
 
@@ -573,14 +569,15 @@ VOID DeallocSystemData(PSYSTEM_DATA systemData)
 {
 	DeallocVmcsRegion(systemData->vmxonRegion);
 	DeallocVmcsRegion(systemData->vmcsRegion);
-	ExFreePoolWithTag(systemData->vmmStack, WVSR_TAG);
 	ExFreePoolWithTag(systemData->msrBitmap, WVSR_TAG);
 }
 
-VOID WvsrVmExitHandler(PREGS guestRegs)
+VOID WvsrVmExitHandler(PSYSTEM_DATA systemData, PREGS guestRegs)
 {
 	VM_EXIT_DATA exitReason = { 0 };
+	UINT64 guestRip = 0;
 	UINT64 exitQualification = 0;
+	UINT64 guestPhysicalAddress = 0;
 	KIRQL savedIrql = KeGetCurrentIrql();
 
 	if (savedIrql < DISPATCH_LEVEL)
@@ -637,11 +634,34 @@ VOID WvsrVmExitHandler(PREGS guestRegs)
 		IncrementIp();
 		break;
 	}
-	case VM_EXIT_HLT:
+	case VM_EXIT_EPT_VIOLATION:
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "[*] Hit Halt VM Exit reason!\n"));
-		IncrementIp();
+		__vmx_vmread(GUEST_RIP, &guestRip);
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "[*] RIP: 0x%llx\n", guestRip));
+		__vmx_vmread(GUEST_PHYSICAL_ADDR_FULL, &guestPhysicalAddress);
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "[*] EPT Violation at address: 0x%llx\n", guestPhysicalAddress));
+
+		if (EptHandleEptViolation(exitQualification, &systemData->eptState, guestPhysicalAddress))
+		{
+			IncrementIp();
+		}
+
+		break;
+	}
+	case VM_EXIT_EPT_MISCONFIGURATION:
+	{
+		__vmx_vmread(GUEST_RIP, &guestRip);
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] EPT MISCONFIG RIP at: 0x%llx\n", guestRip));
+		__vmx_vmread(GUEST_PHYSICAL_ADDR_FULL, &guestPhysicalAddress);
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "[*] EPT MISCONFIG at physical address: 0x%llx\n", guestPhysicalAddress));
+
 		KdBreakPoint();
+		// No RIP increment here
+		break;
+	}
+	case VM_EXIT_VMCALL:
+	{
+		VmExitVmcallHandler(guestRegs->rcx, guestRegs->rdx, guestRegs->r8);
 		break;
 	}
 	default:
@@ -671,11 +691,21 @@ NTSTATUS WvsrCheckFeatures()
 
 NTSTATUS WvsrInitVm() 
 {
+	EPT_STATE eptState;
+
 	gSystemData = (PSYSTEM_DATA)ExAllocatePoolWithTag(NonPagedPool, CPU_COUNT * sizeof(SYSTEM_DATA), WVSR_TAG);
 	if (gSystemData == NULL)
 	{
 		return STATUS_UNSUCCESSFUL;
 	}
+
+	// Initialize one ept for all cores
+	if (!InitializeEptState(&eptState))
+	{
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] EPT State init failed!"));
+		return STATUS_UNSUCCESSFUL;
+	}
+
 	for (int coreIndex = 0; coreIndex < CPU_COUNT; coreIndex++)
 	{
 		// Schedule the i-th logic processor
@@ -687,6 +717,8 @@ NTSTATUS WvsrInitVm()
 			KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] Allocation failed for core %d\n", coreIndex));
 			return STATUS_UNSUCCESSFUL;
 		}
+		gSystemData->eptState = eptState;
+
 		if (!(VmxonOp(WvsrPaFromVa((&gSystemData[coreIndex])->vmxonRegion))))
 		{
 			KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] vmxon failed for core %d\n", coreIndex));

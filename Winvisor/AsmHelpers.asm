@@ -13,6 +13,7 @@ PUBLIC GetGS
 PUBLIC GetRflags
 PUBLIC GetLDTR
 PUBLIC VmExitHandler
+PUBLIC InvokeVmcall
 
 EXTERN WvsrVmExitHandler:PROC
 EXTERN VmResumeErrorHandler:PROC
@@ -132,7 +133,8 @@ RET
 GetLDTR ENDP
 
 VmExitHandler PROC PUBLIC
- 
+
+; 0x80 bytes
 PUSH R15
 PUSH R14
 PUSH R13
@@ -150,10 +152,11 @@ PUSH RDX
 PUSH RCX
 PUSH RAX
 
-MOV RCX, RSP ; param for the handler
-SUB RSP, 28h
+MOV RCX, [RSP + 80h]
+MOV RDX, RSP ; param for the handler
+SUB RSP, 30h
 CALL WvsrVmExitHandler
-ADD RSP, 28h
+ADD RSP, 30h
 
 POP RAX
 POP RCX
@@ -181,6 +184,13 @@ ADD RSP, 20h
 INT 3
 
 VmExitHandler ENDP
+
+InvokeVmcall PROC PUBLIC
+
+vmcall
+ret
+
+InvokeVmcall ENDP
 
 _text ENDS
 END

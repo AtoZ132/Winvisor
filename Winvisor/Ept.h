@@ -23,28 +23,44 @@
 
 #define SIZE_2_MB ((SIZE_T)(512 * PAGE_SIZE))
 
+// Index of the 1st paging structure (4096 byte)
+#define ADDRMASK_EPT_PML1_INDEX(_VAR_) ((_VAR_ & 0x1FF000ULL) >> 12)
+
+// Index of the 2nd paging structure (2MB)
+#define ADDRMASK_EPT_PML2_INDEX(_VAR_) ((_VAR_ & 0x3FE00000ULL) >> 21)
+
+// Index of the 3rd paging structure (1GB)
+#define ADDRMASK_EPT_PML3_INDEX(_VAR_) ((_VAR_ & 0x7FC0000000ULL) >> 30)
+
+// Index of the 4th paging structure (512GB)
+#define ADDRMASK_EPT_PML4_INDEX(_VAR_) ((_VAR_ & 0xFF8000000000ULL) >> 39)
+
 
 typedef union _EPTP
 {
 	struct
 	{
-		UINT64 memoryType : 3; // 0 = Uncacheable (UC) ; 6 = Write - back(WB) ; others are reserved
-		UINT64 eptPageWalkLen : 3; // Value is 1 less than the actual walk length
+		UINT64 memoryType : 3;
+
+		// Value is 1 less than the actual walk length
+		UINT64 eptPageWalkLen : 3; 
 		UINT64 dirtyAndAccessFlagEnable : 1;
-		UINT64 supervisorShadowStackEnforce : 1; // Enables enforcement of access rights for supervisor shadow-stack pages
+
+		// Enables enforcement of access rights for supervisor shadow-stack pages
+		UINT64 supervisorShadowStackEnforce : 1;
 		UINT64 reserved : 4;
 		UINT64 pml4Addr : 36;
 		UINT64 reserved2 : 16;
 	} Bitfields;
 	UINT64 flags;
-} EPTP, *PEPTP;
+} EPTP, * PEPTP;
 
 typedef struct _MTRR_RANGE_DESCRIPTOR
 {
 	UINT64 physicalBaseAddress;
 	UINT64 physicalEndAddress;
 	UINT8 memoryType;
-} MTRR_RANGE_DESCRIPTOR, *PMTRR_RANGE_DESCRIPTOR;
+} MTRR_RANGE_DESCRIPTOR, * PMTRR_RANGE_DESCRIPTOR;
 
 // EPT PML4 Entry (PML4E) that References an EPT Page-Directory-Pointer Table
 typedef union _EPT_PML4E
@@ -57,14 +73,14 @@ typedef union _EPT_PML4E
 		UINT64 reserved : 5;
 		UINT64 accessedFlag : 1;
 		UINT64 ignored : 1;
-		UINT64 usermodeExecute : 1;
+		UINT64 userModeExecute : 1;
 		UINT64 ignored2 : 1;
 		UINT64 physicalAddress : 36;
 		UINT64 reserved2 : 4;
 		UINT64 ignored3 : 12;
 	} Bitfields;
 	UINT64 flags;
-} EPT_PML4E, *PEPT_PML4E;
+} EPT_PML4E, * PEPT_PML4E;
 
 // EPT Page-Directory-Pointer-Table Entry (PDPTE) that Maps a 1-GByte Page
 typedef union _EPT_PDPTE_HUGE_PAGE
@@ -76,10 +92,12 @@ typedef union _EPT_PDPTE_HUGE_PAGE
 		UINT64 execute : 1;
 		UINT64 memoryType : 3;
 		UINT64 ignorePATMemoryType : 1;
-		UINT64 hugePage : 1; // Must be 1
+		
+		// Must be 1
+		UINT64 hugePage : 1;
 		UINT64 accessedFlag : 1;
 		UINT64 dirtyFlag : 1;
-		UINT64 usermodeExecute : 1;
+		UINT64 userModeExecute : 1;
 		UINT64 ignored : 1;
 		UINT64 reserved2 : 18;
 		UINT64 hugePagePhysicalAddr : 18;
@@ -90,10 +108,10 @@ typedef union _EPT_PDPTE_HUGE_PAGE
 		UINT64 ignored3 : 1;
 		UINT64 supervisorShadowStack : 1;
 		UINT64 ignored4 : 2;
-		UINT64 suppressVE : 1; // Suppress #VE
+		UINT64 suppressVE : 1;
 	} Bitfields;
 	UINT64 flags;
-} EPT_PDPTE_HUGE_PAGE, *PEPT_PDPTE_HUGE_PAGE;
+} EPT_PDPTE_HUGE_PAGE, * PEPT_PDPTE_HUGE_PAGE;
 
 // EPT Page-Directory-Pointer-Table Entry (PDPTE) that References an EPT Page Director
 typedef union _EPT_PDPTE
@@ -106,14 +124,14 @@ typedef union _EPT_PDPTE
 		UINT64 reserved : 5;
 		UINT64 accessedFlag : 1;
 		UINT64 ignored : 1;
-		UINT64 usermodeExecute : 1;
+		UINT64 userModeExecute : 1;
 		UINT64 ignored2 : 1;
 		UINT64 physicalAddress : 36;
 		UINT64 reserved2 : 4;
 		UINT64 ignored3 : 12;
 	} Bitfields;
 	UINT64 flags;
-} EPT_PDPTE, *PEPT_PDPTE;
+} EPT_PDPTE, * PEPT_PDPTE;
 
 // EPT Page-Directory Entry (PDE) that Maps a 2-MByte Page
 typedef union _EPT_PDE_LARGE_PAGE
@@ -125,10 +143,12 @@ typedef union _EPT_PDE_LARGE_PAGE
 		UINT64 execute : 1;
 		UINT64 memoryType : 3;
 		UINT64 ignorePATMemoryType : 1;
-		UINT64 largePage : 1; // Must be 1
+		
+		// Must be 1
+		UINT64 largePage : 1;
 		UINT64 accessedFlag : 1;
 		UINT64 dirtyFlag : 1;
-		UINT64 usermodeExecute : 1;
+		UINT64 userModeExecute : 1;
 		UINT64 ignored : 1;
 		UINT64 reserved2 : 9;
 		UINT64 physicalAddress : 27;
@@ -139,10 +159,10 @@ typedef union _EPT_PDE_LARGE_PAGE
 		UINT64 ignored3 : 1;
 		UINT64 supervisorShadowStack : 1;
 		UINT64 ignored4 : 2;
-		UINT64 suppressVE : 1; // Suppress #VE
+		UINT64 suppressVE : 1;
 	} Bitfields;
 	UINT64 flags;
-} EPT_PDE_LARGE_PAGE, *PEPT_PDE_LARGE_PAGE;
+} EPT_PDE_LARGE_PAGE, * PEPT_PDE_LARGE_PAGE;
 
 // EPT Page-Directory Entry (PDE) that References an EPT Page Table
 typedef union _EPT_PDE
@@ -155,14 +175,14 @@ typedef union _EPT_PDE
 		UINT64 reserved : 5;
 		UINT64 accessedFlag : 1;
 		UINT64 ignored : 1;
-		UINT64 usermodeExecute : 1;
+		UINT64 userModeExecute : 1;
 		UINT64 ignored2 : 1;
 		UINT64 physicalAddress : 36;
 		UINT64 reserved2 : 4;
 		UINT64 ignored3 : 12;
 	} Bitfields;
 	UINT64 flags;
-} EPT_PDE, *PEPT_PDE;
+} EPT_PDE, * PEPT_PDE;
 
 // EPT Page-Table Entry that Maps a 4-KByte Page
 typedef union _EPT_PTE
@@ -177,7 +197,7 @@ typedef union _EPT_PTE
 		UINT64 ignored : 1;
 		UINT64 accessedFlag : 1;
 		UINT64 dirtyFlag : 1;
-		UINT64 usermodeExecute : 1;
+		UINT64 userModeExecute : 1;
 		UINT64 ignored2 : 1;
 		UINT64 physicalAddress : 36;
 		UINT64 reserved2 : 4;
@@ -188,16 +208,18 @@ typedef union _EPT_PTE
 		UINT64 supervisorShadowStack : 1;
 		UINT64 subPagePermissions : 1;
 		UINT64 ignored5 : 1;
-		UINT64 suppressVE : 1; // Suppress #VE
+		UINT64 suppressVE : 1;
 	} Bitfields;
 	UINT64 flags;
-} EPT_PTE, *PEPT_PTE;
+} EPT_PTE, * PEPT_PTE;
 
-typedef struct _INVEPT_DESCRIPTOR 
+typedef struct _INVEPT_DESC
 {
-	EPTP eptp;
+	UINT64 eptp;
 	UINT64 reserved;
-} INVEPT_DESC, *PINVEPT_DESC;
+} INVEPT_DESC, * PINVEPT_DESC;
+
+
 
 typedef EPT_PML4E EPT_PML4_POINTER, * PEPT_PML4_POINTER;
 typedef EPT_PDPTE EPT_PML3_POINTER, * PEPT_PML3_POINTER;
@@ -217,32 +239,93 @@ typedef struct _EPT_PAGE_TABLE
 	LIST_ENTRY dynamicSplitList;
 } EPT_PAGE_TABLE, * PEPT_PAGE_TABLE;
 
+typedef struct _EPT_DYNAMIC_SPLIT
+{
+	DECLSPEC_ALIGN(PAGE_SIZE) EPT_PML1_ENTRY pml1[PML1E_ENTRIES_COUNT];
+
+	union
+	{
+		PEPT_PML2_ENTRY pml2Entry;
+		PEPT_PML2_POINTER pml2Pointer;
+	};
+
+	LIST_ENTRY dynamicSplitList;
+}EPT_DYNAMIC_SPLIT, * PEPT_DYNAMIC_SPLIT;
+
 
 typedef struct _EPT_STATE
 {
 	MTRR_RANGE_DESCRIPTOR mtrrRangeDesc[9];
 	UINT32 numberOfEnabledMemoryRanges;
-	PEPTP eptp;
+	EPTP eptp;
 	PEPT_PAGE_TABLE eptPageTable;
+	PUINT64 preAllocatedBuffer;
 } EPT_STATE, * PEPT_STATE;
 
-
-// EPT cache types
-typedef enum CACHE_TYPE 
+typedef union _EPT_VIOLATION_EXIT_QUAL
 {
-	UC = 0, // Uncachable
-	WC = 1, // Write Combine
-	WT = 4, // Write Through
-	WP = 5, // Write Protected
-	WB = 6  // Write back
-};
+	struct
+	{
+		UINT64 causeRead : 1;
+		UINT64 causeWrite : 1;
+		UINT64 causeExecute : 1;
+		UINT64 eptReadable : 1;
+		UINT64 eptWriteable : 1;
+		UINT64 eptExecutable : 1;
+		UINT64 eptExecutableForUserMode : 1;
+		UINT64 validGuestLinearAddress : 1;
+		UINT64 causeAddressTranslation : 1;
+
+		/*
+		* This bit is 0 if the linear address is a supervisor-mode linear address and
+		* 1 if it is a user-mode linear address.
+		*/
+		UINT64 userModeLinearAddress : 1;
+
+		/*
+		* This bit is 0 if paging translates the linear address to a read-only page and
+		* 1 if it translates to a read/write page.
+		*/
+		UINT64 readableWriteablePage : 1;
+
+		/*
+		* This bit is 0 if paging translates the linear address to an executable page and
+		* 1 if it translates to an execute-disable page.
+		*/
+		UINT64 executeDisablePage : 1;
+
+		// NMI unblocking due to IRET
+		UINT64 nmiUnblocking : 1;
+		UINT64 shadowStackAccess : 1;
+
+		/*
+		* If supervisor shadow-stack control is enabled (by setting bit 7 of EPTP),
+		* this bit is the same as bit 60 in the EPT
+		* paging-structure entry that maps the page of the guest-physical address of the access causing the EPT violation.
+		*/
+		UINT64 supervisorShadowStack : 1;
+		UINT64 guestPagingVerification : 1;
+		UINT64 asynchronousToInstruction : 1;
+		UINT64 reserved : 47;
+	} Bitfield;
+	UINT64 flags;
+} EPT_VIOLATION_EXIT_QUAL, * PEPT_VIOLATION_EXIT_QUAL;
 
 
 extern UINT64 gGuestMappedArea;
+extern void inline InvokeVmcall(UINT64 vmcallNumber, UINT64 param1, UINT64 param2);
 
 
+VOID NotifyInvalidateAllEpt(UINT64 context);
+VOID InvalidateEptByVmcall(UINT64 context);
 NTSTATUS CheckEptFeatures();
-VOID BuildMtrrMap(PEPT_STATE eptState);
-VOID setupPml2Entry(PEPT_PML2_ENTRY pml2Entry, UINT64 pageFrameNumber, PEPT_STATE eptState);
-PEPT_PAGE_TABLE CreateIdentityPageTable(PEPT_STATE eptState);
-PEPTP InitEpt();
+VOID EptBuildMtrrMap(PEPT_STATE eptState);
+VOID EptSetupPml2Entry(PEPT_PML2_ENTRY pml2Entry, UINT64 pageFrameNumber, PEPT_STATE eptState);
+PEPT_PAGE_TABLE EptCreateIdentityPageTable(PEPT_STATE eptState);
+PEPT_PML2_ENTRY EptGetPml2Entry(PEPT_PAGE_TABLE pageTable, UINT64 physicalAddress);
+PEPT_PML1_ENTRY EptGetPml1Entry(PEPT_PAGE_TABLE pageTable, UINT64 physicalAddress);
+BOOLEAN EptSplitLargePage(PEPT_STATE eptState, UINT64 physicalAddress);
+BOOLEAN EptVmxRootModePageHook(PEPT_STATE eptState, PVOID targetFunction, BOOLEAN hasLaunched);
+BOOLEAN EptPageHook(PEPT_STATE eptState, PVOID targetFunction, BOOLEAN hasLaunched);
+BOOLEAN EptHandleEptViolation(UINT64 exitQualification, PEPT_STATE eptState, UINT64 guestPhysicalAddress);
+BOOLEAN InitializeEptState(PEPT_STATE eptState);
