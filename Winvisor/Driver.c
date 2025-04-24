@@ -47,51 +47,17 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
     {
         return ntStatus;
     }
+    
 
-    KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "[*] Vmx mode turn on!\n"));
-
-    ntStatus = STATUS_SUCCESS;
-    for (int i = 0; i < CPU_COUNT; i++)
-    {
-        WvsrStartVm(i, &ntStatus);
-        if (!NT_SUCCESS(ntStatus))
-        {
-            DeallocSystemData(gSystemData);
-            return ntStatus;
-        }
-    }
-
-    KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "[*] Driver Loaded!\n"));
+    KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "[*] Driver Loaded!\n"));
 
     return ntStatus;
 }
 
-VOID DriverUnload(PDRIVER_OBJECT DriverObject) 
-{
-    UNICODE_STRING dosDeviceName;
-
-    RtlInitUnicodeString(&dosDeviceName, L"\\DosDevices\\WinvisorDevice");
-    IoDeleteSymbolicLink(&dosDeviceName);
-    IoDeleteDevice(DriverObject->DeviceObject);
-
-    WvsrStopVm();
-    KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "[*] Vmx mode turn off!\n"));
-    KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "[*] Driver Unloaded!\n"));
-}
-
-NTSTATUS DriverUnsupported(PDEVICE_OBJECT DeviceObject, PIRP Irp) 
-{
-    Irp->IoStatus.Status = STATUS_SUCCESS;
-    Irp->IoStatus.Information = 0;
-
-    KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] Unsupported Call: %d\n", Irp->Type));
-    IoCompleteRequest(Irp, IO_NO_INCREMENT);
-
-    return STATUS_SUCCESS;
-}
-
 NTSTATUS DriverCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
+
+    KeGenericCallDpc(WvsrDpcBroadcastStartVm, 0);
 
     Irp->IoStatus.Status = STATUS_SUCCESS;
     Irp->IoStatus.Information = 0;
@@ -102,10 +68,33 @@ NTSTATUS DriverCreate(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
 NTSTATUS DriverClose(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
-
+    WvsrStopVm();
     Irp->IoStatus.Status = STATUS_SUCCESS;
     Irp->IoStatus.Information = 0;
 
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+
+    return STATUS_SUCCESS;
+}
+
+VOID DriverUnload(PDRIVER_OBJECT DriverObject)
+{
+    UNICODE_STRING dosDeviceName;
+
+    RtlInitUnicodeString(&dosDeviceName, L"\\DosDevices\\WinvisorDevice");
+    IoDeleteSymbolicLink(&dosDeviceName);
+    IoDeleteDevice(DriverObject->DeviceObject);
+
+    KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[*] Vmx mode turn off!\n"));
+    KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[*] Driver Unloaded!\n"));
+}
+
+NTSTATUS DriverUnsupported(PDEVICE_OBJECT DeviceObject, PIRP Irp)
+{
+    Irp->IoStatus.Status = STATUS_SUCCESS;
+    Irp->IoStatus.Information = 0;
+
+    KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] Unsupported Call: %d\n", Irp->Type));
     IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
     return STATUS_SUCCESS;

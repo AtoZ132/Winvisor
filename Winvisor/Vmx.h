@@ -6,15 +6,6 @@
 #include "Ept.h"
 
 
-// Set the define for unicore mode
-#define UNICORE 0
-
-#if UNICORE == 1
-#define CPU_COUNT 1
-#else
-#define CPU_COUNT 3
-#endif
-
 #define VMM_STACK_SIZE (3 * PAGE_SIZE)
 
 // Definitions of Primary Processor-Based VM-Execution Controls
@@ -147,13 +138,14 @@
 *	Bits 30:0: VMCS revision identifier
 *	Bit 31: shadow-VMCS indicator
 */
-#pragma pack(1)
+#pragma pack(push, 1)
 typedef struct _VMCS_REGION
 {
 	UINT32 vmcsRevisionId;
 	UINT32 vmxAbortIndicator;
 	UINT8  vmcsData[PAGE_SIZE - 8];
 } VMCS_REGION, *PVMCS_REGION;
+#pragma pack(pop)
 
 typedef struct _SYSTEM_DATA SYSTEM_DATA, * PSYSTEM_DATA;
 /*
@@ -162,7 +154,6 @@ typedef struct _SYSTEM_DATA SYSTEM_DATA, * PSYSTEM_DATA;
 typedef struct _VMM_STACK 
 {
 	UINT8 vmmStack[VMM_STACK_SIZE];
-	PSYSTEM_DATA systemData;
 } VMM_STACK, * PVMM_STACK;
 
 /*
@@ -635,7 +626,9 @@ extern UINT16 inline GetGS();
 extern UINT64 inline GetRflags();
 extern UINT64 inline GetLDTR();
 extern void VmExitHandler();
-
+extern void inline InvokeVmcall(UINT64 vmcallNumber, UINT64 param1, UINT64 param2);
+extern void VmxSaveState();
+extern void VmxRestoreState();
 
 NTSTATUS CheckVmxSupport();
 BOOLEAN VmxonOp(UINT64* vmxonRegionPhysical);
@@ -650,18 +643,21 @@ VOID VmExitCrAccessHandler(PREGS regs);
 VOID VmExitMsrReadHandler(PREGS regs);
 VOID VmExitMsrWriteHandler(PREGS regs);
 VOID VmExitVmxHandler(PREGS regs);
-VOID VmExitVmcallHandler(UINT64 vmcallNumber, UINT64 param1, UINT64 param2);
+BOOLEAN VmExitVmcallHandler(UINT64 vmcallNumber, UINT64 param1, UINT64 param2);
 VOID SetupMsrBitmap(UINT64 msrBitmap);
 BOOLEAN InitSegmentDescriptor(PUINT8 gdtBase, UINT16 segmentSelector, PSEGMENT_DESCRIPTOR segDesc);
 BOOLEAN SetupGuestSelectorFields(PUINT8 gdtBase, UINT16 segmentSelector, UINT16 segmentSelectorIndex);
 UINT32 AdjustVmcsControlField(UINT32 controls, ULONG msrAddr);
-BOOLEAN SetupVmcs(PSYSTEM_DATA systemData);
+BOOLEAN SetupVmcs(PSYSTEM_DATA systemData, PUINT64 guestRSP);
 UINT64* InitVmcsRegion();
 VOID DeallocVmcsRegion(UINT64* vmcsRegionPhysical);
 BOOLEAN AllocSystemData(PSYSTEM_DATA systemData);
-VOID DeallocSystemData(PSYSTEM_DATA systemData);
-VOID WvsrVmExitHandler(PSYSTEM_DATA systemData, PREGS guestRegs);
+VOID DeallocSystemData();
+VOID WvsrVmExitHandler(PREGS guestRegs);
 NTSTATUS WvsrCheckFeatures();
+VOID WvsrDpcBroadcastVmxOnVm(struct _KDPC* Dpc, PVOID DeferredContext, PVOID SystemArgument1, PVOID SystemArgument2);
 NTSTATUS WvsrInitVm();
-VOID WvsrStartVm(UINT32 processorId, NTSTATUS* ntStatus);
+VOID WvsrDpcBroadcastStartVm(struct _KDPC* Dpc, PVOID DeferredContext, PVOID SystemArgument1, PVOID SystemArgument2);
+NTSTATUS WvsrStartVm(PUINT64 guestRSP);
+VOID WvsrDpcBroadcastStopVm(struct _KDPC* Dpc, PVOID DeferredContext, PVOID SystemArgument1, PVOID SystemArgument2);
 VOID WvsrStopVm();

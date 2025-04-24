@@ -312,7 +312,6 @@ typedef union _EPT_VIOLATION_EXIT_QUAL
 } EPT_VIOLATION_EXIT_QUAL, * PEPT_VIOLATION_EXIT_QUAL;
 
 
-extern UINT64 gGuestMappedArea;
 extern void inline InvokeVmcall(UINT64 vmcallNumber, UINT64 param1, UINT64 param2);
 
 

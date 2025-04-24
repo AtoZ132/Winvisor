@@ -14,9 +14,12 @@ PUBLIC GetRflags
 PUBLIC GetLDTR
 PUBLIC VmExitHandler
 PUBLIC InvokeVmcall
+PUBLIC VmxSaveState
+PUBLIC VmxRestoreState
 
 EXTERN WvsrVmExitHandler:PROC
 EXTERN VmResumeErrorHandler:PROC
+EXTERN WvsrStartVm:PROC
 
 _text SEGMENT
 
@@ -152,11 +155,10 @@ PUSH RDX
 PUSH RCX
 PUSH RAX
 
-MOV RCX, [RSP + 80h]
-MOV RDX, RSP ; param for the handler
-SUB RSP, 30h
+MOV RCX, RSP ; param for the handler
+SUB RSP, 28h
 CALL WvsrVmExitHandler
-ADD RSP, 30h
+ADD RSP, 28h
 
 POP RAX
 POP RCX
@@ -187,10 +189,70 @@ VmExitHandler ENDP
 
 InvokeVmcall PROC PUBLIC
 
-vmcall
-ret
+VMCALL
+RET
 
 InvokeVmcall ENDP
+
+VmxSaveState PROC
+	
+	PUSHFQ	; save r/eflag
+
+	PUSH RAX
+	PUSH RCX
+	PUSH RDX
+	PUSH RBX
+	PUSH RBP
+	PUSH RSI
+	PUSH RDI
+	PUSH R8
+	PUSH R9
+	PUSH R10
+	PUSH R11
+	PUSH R12
+	PUSH R13
+	PUSH R14
+	PUSH R15
+
+	SUB RSP, 100h
+	; It a x64 FastCall function so the first parameter should go to rcx
+
+	MOV RCX, RSP
+
+	CALL WvsrStartVm
+
+	INT 3	; we should never reach here as we execute vmlaunch in the above function.
+			; if rax is FALSE then it's an indication of error
+
+	JMP VmxRestoreState
+VmxSaveState ENDP
+
+VmxRestoreState PROC
+	
+	add rsp, 0100h
+
+	POP R15
+	POP R14
+	POP R13
+	POP R12
+	POP R11
+	POP R10
+	POP R9
+	POP R8
+	POP RDI
+	POP RSI
+	POP RBP
+	POP RBX
+	POP RDX
+	POP RCX
+	POP RAX
+	
+	POPFQ	; restore r/eflags
+
+	RET
+	
+VmxRestoreState ENDP
+
 
 _text ENDS
 END

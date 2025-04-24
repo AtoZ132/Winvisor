@@ -20,7 +20,7 @@ NTSTATUS CheckEptFeatures()
 
 	if (!mtrrDefType.Bitfield.mtrrEnable)
 	{
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] MTRR dynamic ranges feature not supported"));
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[-] MTRR dynamic ranges feature not supported\n"));
 		return STATUS_NOT_SUPPORTED;
 	}
 
@@ -59,10 +59,10 @@ VOID EptBuildMtrrMap(PEPT_STATE eptState)
 				eptState->numberOfEnabledMemoryRanges--;
 			}
 		}
-		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "MTRR Range: Base=0x%llx End=0x%llx Type=0x%x",
+		KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "[*] MTRR Range: Base=0x%llx End=0x%llx Type=0x%x\n",
 			mtrrRangeDesc->physicalBaseAddress, mtrrRangeDesc->physicalEndAddress, mtrrRangeDesc->memoryType));
 	}
-	KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "Total MTRR Ranges Committed: %d", eptState->numberOfEnabledMemoryRanges));
+	KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "[*] Total MTRR Ranges Committed: %d\n", eptState->numberOfEnabledMemoryRanges));
 }
 
 VOID EptSetupPml2Entry(PEPT_PML2_ENTRY pml2Entry, UINT64 pageFrameNumber, PEPT_STATE eptState)
@@ -182,7 +182,6 @@ PEPT_PML1_ENTRY EptGetPml1Entry(PEPT_PAGE_TABLE pageTable, UINT64 physicalAddres
 	PEPT_PML2_ENTRY pml2Entry;
 	PEPT_PML1_ENTRY pml1Entry;
 	PEPT_PML2_POINTER pml2Ptr;
-
 	pml2Index = ADDRMASK_EPT_PML2_INDEX(physicalAddress);
 	pml3Index = ADDRMASK_EPT_PML3_INDEX(physicalAddress);
 	pml4Index = ADDRMASK_EPT_PML4_INDEX(physicalAddress);
@@ -193,14 +192,14 @@ PEPT_PML1_ENTRY EptGetPml1Entry(PEPT_PAGE_TABLE pageTable, UINT64 physicalAddres
 	}
 
 	pml2Entry = &pageTable->pml2[pml3Index][pml2Index];
-	if (pml2Entry->Bitfields.largePage)
+	if (!pml2Entry || pml2Entry->Bitfields.largePage)
 	{
 		return NULL;
 	}
 
 	pml2Ptr = (PEPT_PML2_POINTER)pml2Entry;
 
-	pml1Entry = (PEPT_PML1_ENTRY)WvsrPaFromVa((UINT64*)(pml2Ptr->Bitfields.physicalAddress * PAGE_SIZE));
+	pml1Entry = (PEPT_PML1_ENTRY)WvsrVaFromPa((UINT64*)(pml2Ptr->Bitfields.physicalAddress * PAGE_SIZE));
 	if (!pml1Entry)
 	{
 		return NULL;
@@ -335,7 +334,7 @@ BOOLEAN EptPageHook(PEPT_STATE eptState, PVOID targetFunction, BOOLEAN hasLaunch
 	{
 		if ((EptVmxRootModePageHook(eptState, targetFunction, hasLaunched)))
 		{
-			KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL, "[*] Hook placed!\n"));
+			KdPrintEx((DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "[*] Hook placed!\n"));
 			return TRUE;
 		}
 	}
@@ -399,6 +398,8 @@ BOOLEAN InitializeEptState(PEPT_STATE eptState)
 	eptp.Bitfields.pml4Addr = (UINT64)WvsrPaFromVa(&pageTable->pml4) / PAGE_SIZE;
 
 	eptState->eptp = eptp;
+
+	//EptPageHook(eptState, ExAllocatePoolWithTag, FALSE);
 
 	return TRUE;
 }
